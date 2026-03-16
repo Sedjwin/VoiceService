@@ -6,11 +6,17 @@ Called internally by AIGateway — not directly by end-user agents.
 import logging
 from contextlib import asynccontextmanager
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .routers.voice import router as voice_router
+
+_STATIC = Path(__file__).parent / "static"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,3 +73,11 @@ app.add_middleware(
 )
 
 app.include_router(voice_router)
+
+# ── Admin UI ──────────────────────────────────────────────────────────────────
+if _STATIC.exists():
+    app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
+
+    @app.get("/", include_in_schema=False)
+    async def admin_ui():
+        return FileResponse(str(_STATIC / "admin.html"))

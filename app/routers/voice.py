@@ -81,13 +81,15 @@ async def stt_endpoint(request: Request):
     finally:
         fin = time.time()
         _voice_state.update({"current": "idle", "since": None})
+        transcript = result.get("text", "") if isinstance(result, dict) else ""
         _voice_log.appendleft({
             "id": int(started * 1000),
             "type": "stt",
             "started_at": started,
             "finished_at": fin,
             "duration_ms": int((fin - started) * 1000),
-            "transcript": result.get("text", "") if isinstance(result, dict) else "",
+            "transcript": transcript,
+            "transcript_words": len(transcript.split()) if transcript else 0,
             "audio_bytes": len(wav_bytes),
             "error": error,
         })
@@ -124,16 +126,24 @@ async def tts_json_endpoint(req: TTSRequest):
     finally:
         fin = time.time()
         _voice_state.update({"current": "idle", "since": None})
+        syn_ms   = int((fin - started) * 1000)
+        audio_ms = result.get("duration_ms") if result else None
         _voice_log.appendleft({
             "id": int(started * 1000),
             "type": "tts",
             "started_at": started,
             "finished_at": fin,
-            "duration_ms": int((fin - started) * 1000),
-            "synthesis_ms": int((fin - started) * 1000),
-            "text": req.text[:200],
+            "duration_ms": syn_ms,
+            "synthesis_ms": syn_ms,
+            "text": req.text,          # full text, not truncated
             "voice": req.voice,
-            "audio_ms": result.get("duration_ms") if result else None,
+            "speed": req.speed,
+            "noise_scale": req.noise_scale if req.voice.lower() == "glados" else None,
+            "noise_w":     req.noise_w     if req.voice.lower() == "glados" else None,
+            "audio_ms":    audio_ms,
+            "viseme_count": len(result.get("visemes", [])) if result else None,
+            "visemes": result.get("visemes", []) if result else [],
+            "rtf": round(syn_ms / audio_ms, 3) if audio_ms else None,
             "error": error,
         })
 

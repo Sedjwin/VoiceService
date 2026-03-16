@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoiceService — Admin</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #030712;
+    --card:     #111827;
+    --card2:    #1f2937;
+    --border:   #374151;
+    --border2:  #4b5563;
+    --text:     #f9fafb;
+    --muted:    #9ca3af;
+    --dim:      #6b7280;
+    --amber:    #f59e0b;
+    --amber2:   #fbbf24;
+    --cyan:     #22d3ee;
+    --blue:     #3b82f6;
+    --purple:   #8b5cf6;
+    --red:      #ef4444;
+    --green:    #22c55e;
+    --font:     'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --sans:     system-ui, -apple-system, sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ── Layout ──────────────────────────────────────────────────── */
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-eye {
+    width: 32px; height: 32px;
+    border: 2px solid var(--amber);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 10px rgba(245,158,11,0.4);
+  }
+  .logo-eye::after {
+    content: '';
+    width: 10px; height: 10px;
+    background: var(--amber2);
+    border-radius: 50%;
+  }
+  h1 { font-size: 1.1rem; font-weight: 700; color: var(--text); }
+  .version { font-size: 0.75rem; color: var(--dim); font-family: var(--font); }
+
+  .refresh-badge {
+    font-size: 0.7rem; font-family: var(--font);
+    color: var(--dim); display: flex; align-items: center; gap: 6px;
+  }
+  .refresh-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green);
+    animation: blink 2s ease-in-out infinite;
+  }
+  @keyframes blink { 0%,100% { opacity:1 } 50% { opacity:0.2 } }
+
+  main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  /* ── Cards ───────────────────────────────────────────────────── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap-10px; gap: 10px;
+    font-size: 0.7rem; font-weight: 600; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .card-body { padding: 16px; }
+
+  /* ── Status grid ─────────────────────────────────────────────── */
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+  }
+  .stat-box {
+    background: var(--card2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .stat-label { font-size: 0.7rem; color: var(--dim); margin-bottom: 4px; }
+  .stat-value {
+    font-size: 1rem; font-weight: 700; font-family: var(--font);
+    color: var(--text);
+  }
+  .stat-value.ok  { color: var(--green); }
+  .stat-value.off { color: var(--red); }
+  .stat-value.act { color: var(--amber); }
+
+  /* ── Current state ───────────────────────────────────────────── */
+  .state-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 16px;
+  }
+  .state-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .state-dot.idle     { background: var(--border2); }
+  .state-dot.stt      { background: var(--blue);   animation: pulse 1s ease-in-out infinite; }
+  .state-dot.tts      { background: var(--amber);  animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { transform:scale(1); opacity:1 }  50% { transform:scale(1.5); opacity:0.6 } }
+
+  .state-label { font-weight: 600; font-size: 0.9rem; }
+  .state-label.idle { color: var(--muted); }
+  .state-label.stt  { color: var(--blue); }
+  .state-label.tts  { color: var(--amber); }
+  .state-preview { color: var(--dim); font-size: 0.8rem; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── Log ─────────────────────────────────────────────────────── */
+  .log-list { display: flex; flex-direction: column; gap: 6px; }
+
+  .log-entry {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .log-entry.error-entry { border-color: var(--red); }
+
+  .log-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px;
+    cursor: pointer;
+    user-select: none;
+    transition: background .15s;
+  }
+  .log-header:hover { background: var(--card2); }
+
+  .log-chevron { color: var(--dim); font-size: 0.7rem; width: 12px; flex-shrink: 0; }
+  .log-type-badge {
+    font-size: 0.65rem; font-weight: 700; font-family: var(--font);
+    padding: 1px 6px; border-radius: 4px; flex-shrink: 0;
+  }
+  .badge-tts  { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .badge-stt  { background: rgba(59,130,246,0.15);  color: var(--blue); }
+  .badge-err  { background: rgba(239,68,68,0.15);   color: var(--red); }
+
+  .log-ts   { font-size: 0.72rem; font-family: var(--font); color: var(--dim); flex-shrink: 0; }
+  .log-text { font-size: 0.82rem; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log-dur  { font-size: 0.72rem; font-family: var(--font); color: var(--dim); flex-shrink: 0; }
+
+  .log-detail {
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+    padding: 14px 14px;
+    display: none;
+  }
+  .log-detail.open { display: block; }
+
+  .detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px 16px;
+    margin-bottom: 12px;
+  }
+  .detail-item { font-size: 0.78rem; }
+  .detail-key  { color: var(--dim); }
+  .detail-val  { color: var(--text); font-family: var(--font); }
+  .detail-val.good { color: var(--green); }
+  .detail-val.warn { color: var(--amber); }
+  .detail-val.bad  { color: var(--red); }
+
+  .detail-text {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: var(--card2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.82rem;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 200px;
+    overflow-y: auto;
+    line-height: 1.5;
+  }
+
+  .viseme-timeline {
+    display: flex; gap: 2px; height: 20px;
+    overflow-x: auto; margin-top: 10px;
+    padding-bottom: 4px;
+  }
+  .vis-block {
+    border-radius: 3px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 7px; font-weight: 700; color: rgba(0,0,0,0.7);
+    cursor: default;
+  }
+
+  .rtf-bar {
+    margin-top: 8px;
+    height: 4px; border-radius: 2px;
+    background: var(--card2);
+    overflow: hidden;
+  }
+  .rtf-fill {
+    height: 100%; border-radius: 2px;
+    transition: width 0.3s;
+  }
+
+  .empty-log { color: var(--dim); font-size: 0.85rem; padding: 8px 0; }
+
+  /* ── Scrollbar ───────────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--card); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-eye"></div>
+    <div>
+      <h1>VoiceService</h1>
+      <div class="version">STT · TTS · Internal microservice</div>
+    </div>
+  </div>
+  <div class="refresh-badge">
+    <div class="refresh-dot" id="refreshDot"></div>
+    <span id="refreshTs">—</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Health / model status -->
+  <div class="card">
+    <div class="card-header">Model Status</div>
+    <div class="card-body">
+      <div class="status-grid" id="statusGrid">
+        <div class="stat-box"><div class="stat-label">Loading…</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Current activity -->
+  <div class="card">
+    <div class="card-header">Current Activity</div>
+    <div class="state-row" id="stateRow">
+      <div class="state-dot idle" id="stateDot"></div>
+      <span class="state-label idle" id="stateLabel">Idle</span>
+      <span class="state-preview" id="statePreview"></span>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="card">
+    <div class="card-header" style="justify-content:space-between">
+      <span>Operation Log</span>
+      <span id="logCount" style="font-size:0.7rem;color:var(--dim)"></span>
+    </div>
+    <div class="card-body">
+      <div class="log-list" id="logList">
+        <div class="empty-log">No operations yet.</div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ── Viseme helpers ────────────────────────────────────────────────────────────
+const VNAME = ['sil','AA','AE','AH','AO','AW','AY','EH','ER','IH','IY','OW','OY','UH','UW','B/P','F/V','TH','D/T','K/G','CH','S/Z','L/R','W/Y']
+const VCOL  = id => {
+  if (id === 0)            return '#374151'
+  if (id >= 1 && id <= 14) return '#f59e0b'
+  if (id === 15)            return '#3b82f6'
+  if (id === 16)            return '#8b5cf6'
+  return '#22d3ee'
+}
+
+function buildVisemeBar(visemes) {
+  if (!visemes || !visemes.length) return ''
+  const div = document.createElement('div')
+  div.className = 'viseme-timeline'
+  visemes.forEach((v, i) => {
+    const next = visemes[i + 1]
+    const dur  = next ? next.offset_ms - v.offset_ms : 80
+    const w    = Math.max(5, Math.min(30, dur / 6))
+    const el = document.createElement('div')
+    el.className = 'vis-block'
+    el.style.width   = w + 'px'
+    el.style.background = VCOL(v.viseme_id)
+    el.title = `${VNAME[v.viseme_id] ?? v.viseme_id} @ ${v.offset_ms}ms`
+    if (w >= 14) el.textContent = VNAME[v.viseme_id] ?? v.viseme_id
+    div.appendChild(el)
+  })
+  return div
+}
+
+// ── Time formatting ───────────────────────────────────────────────────────────
+function fmtTs(unix) {
+  if (!unix) return '—'
+  return new Date(unix * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})
+}
+function fmtDate(unix) {
+  if (!unix) return '—'
+  return new Date(unix * 1000).toLocaleString()
+}
+function fmsDur(ms) {
+  if (ms == null) return '—'
+  return ms >= 1000 ? (ms/1000).toFixed(2) + ' s' : ms + ' ms'
+}
+function rtfColor(rtf) {
+  if (rtf == null) return ''
+  if (rtf < 0.5)  return 'good'
+  if (rtf < 1.0)  return 'warn'
+  return 'bad'
+}
+
+// ── Render health ─────────────────────────────────────────────────────────────
+async function renderHealth() {
+  try {
+    const r   = await fetch('/health')
+    const d   = await r.json()
+    const grid = document.getElementById('statusGrid')
+    grid.innerHTML = ''
+    const items = [
+      { label:'Whisper STT', val: d.stt_loaded    ? 'Loaded' : 'Not loaded', ok: d.stt_loaded    },
+      { label:'GLaDOS TTS',  val: d.glados_loaded  ? 'Loaded' : 'Not loaded', ok: d.glados_loaded  },
+      { label:'ATLAS TTS',   val: d.atlas_loaded   ? 'Loaded' : 'Not loaded', ok: d.atlas_loaded   },
+      { label:'Service',     val: d.status || '—', ok: d.status === 'ok' },
+    ]
+    items.forEach(it => {
+      const box = document.createElement('div')
+      box.className = 'stat-box'
+      box.innerHTML = `<div class="stat-label">${it.label}</div>
+                       <div class="stat-value ${it.ok ? 'ok' : 'off'}">${it.val}</div>`
+      grid.appendChild(box)
+    })
+  } catch {}
+}
+
+// ── Render a single log entry ─────────────────────────────────────────────────
+function renderEntry(e) {
+  const isTts  = e.type === 'tts'
+  const hasErr = !!e.error
+
+  const wrap = document.createElement('div')
+  wrap.className = 'log-entry' + (hasErr ? ' error-entry' : '')
+
+  // Header
+  const hdr = document.createElement('div')
+  hdr.className = 'log-header'
+
+  const badge = isTts ? 'badge-tts' : 'badge-stt'
+  const label = isTts ? 'TTS' : 'STT'
+  const preview = isTts
+    ? (e.text || '').substring(0, 80)
+    : (e.transcript ? `"${e.transcript.substring(0, 80)}"` : '(no transcript)')
+
+  hdr.innerHTML = `
+    <span class="log-chevron">▶</span>
+    <span class="log-type-badge ${badge}">${label}</span>
+    ${hasErr ? '<span class="log-type-badge badge-err">ERR</span>' : ''}
+    <span class="log-ts">${fmtTs(e.started_at)}</span>
+    <span class="log-text">${escHtml(preview)}</span>
+    <span class="log-dur">${fmsDur(e.duration_ms)}</span>
+  `
+
+  // Detail panel
+  const det = document.createElement('div')
+  det.className = 'log-detail'
+
+  // Build detail grid items
+  const gridItems = [
+    { k:'Started',      v: fmtDate(e.started_at) },
+    { k:'Finished',     v: fmtDate(e.finished_at) },
+    { k:'Processing',   v: fmsDur(e.duration_ms) },
+  ]
+
+  if (isTts) {
+    gridItems.push(
+      { k:'Voice',      v: e.voice || '—' },
+      { k:'Audio',      v: fmsDur(e.audio_ms), cls: 'detail-val' },
+      { k:'Synthesis',  v: fmsDur(e.synthesis_ms) },
+      { k:'RTF',        v: e.rtf != null ? e.rtf.toFixed(3) : '—',
+                        cls: 'detail-val ' + rtfColor(e.rtf) },
+      { k:'Visemes',    v: e.viseme_count != null ? e.viseme_count : '—' },
+    )
+    if (e.speed    != null) gridItems.push({ k:'Speed',       v: e.speed })
+    if (e.noise_scale != null) gridItems.push({ k:'Noise scale', v: e.noise_scale })
+    if (e.noise_w  != null) gridItems.push({ k:'Noise W',     v: e.noise_w })
+  } else {
+    gridItems.push(
+      { k:'Transcript words', v: e.transcript_words != null ? e.transcript_words : '—' },
+      { k:'Input audio',      v: e.audio_bytes != null ? (e.audio_bytes/1024).toFixed(1) + ' KB' : '—' },
+    )
+  }
+
+  const gridHtml = gridItems.map(it =>
+    `<div class="detail-item">
+       <div class="detail-key">${it.k}</div>
+       <div class="${it.cls || 'detail-val'}">${escHtml(String(it.v))}</div>
+     </div>`
+  ).join('')
+
+  // RTF bar (TTS only)
+  let rtfBar = ''
+  if (isTts && e.rtf != null) {
+    const pct    = Math.min(100, e.rtf * 100)
+    const color  = e.rtf < 0.5 ? '#22c55e' : e.rtf < 1.0 ? '#f59e0b' : '#ef4444'
+    rtfBar = `<div style="font-size:.7rem;color:var(--dim);margin-top:10px">
+                Real-time factor: <span style="color:${color};font-family:var(--font)">${e.rtf.toFixed(3)}×</span>
+                (synthesis / audio length — lower = faster than real-time)
+              </div>
+              <div class="rtf-bar"><div class="rtf-fill" style="width:${pct}%;background:${color}"></div></div>`
+  }
+
+  det.innerHTML = `<div class="detail-grid">${gridHtml}</div>${rtfBar}`
+
+  // Full text
+  const fullText = isTts ? e.text : e.transcript
+  if (fullText) {
+    const pre = document.createElement('div')
+    pre.className = 'detail-text'
+    pre.textContent = fullText
+    det.appendChild(pre)
+  }
+
+  // Viseme timeline
+  if (isTts && e.visemes && e.visemes.length) {
+    const label = document.createElement('div')
+    label.style.cssText = 'font-size:.7rem;color:var(--dim);margin-top:10px;margin-bottom:4px'
+    label.textContent = `Viseme timeline (${e.visemes.length} events)`
+    det.appendChild(label)
+    const bar = buildVisemeBar(e.visemes)
+    if (bar) det.appendChild(bar)
+  }
+
+  // Error
+  if (e.error) {
+    const errDiv = document.createElement('div')
+    errDiv.style.cssText = 'margin-top:10px;padding:8px 10px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:6px;color:var(--red);font-size:.8rem;font-family:var(--font);white-space:pre-wrap'
+    errDiv.textContent = e.error
+    det.appendChild(errDiv)
+  }
+
+  // Toggle expand
+  hdr.addEventListener('click', () => {
+    const open = det.classList.toggle('open')
+    hdr.querySelector('.log-chevron').textContent = open ? '▼' : '▶'
+  })
+
+  wrap.appendChild(hdr)
+  wrap.appendChild(det)
+  return wrap
+}
+
+// ── Poll activity + render ────────────────────────────────────────────────────
+let knownIds = new Set()
+
+async function poll() {
+  try {
+    const r = await fetch('/activity')
+    const d = await r.json()
+
+    // Refresh dot flash
+    const dot = document.getElementById('refreshDot')
+    dot.style.background = '#f59e0b'
+    setTimeout(() => { dot.style.background = '#22c55e' }, 300)
+    document.getElementById('refreshTs').textContent =
+      new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})
+
+    // State
+    const stateDot   = document.getElementById('stateDot')
+    const stateLabel = document.getElementById('stateLabel')
+    const statePreview = document.getElementById('statePreview')
+    const s = d.state || 'idle'
+    stateDot.className   = `state-dot ${s}`
+    stateLabel.className = `state-label ${s}`
+    const labels = { idle:'Idle', stt:'Transcribing audio…', tts:'Synthesising speech…' }
+    stateLabel.textContent = labels[s] || s
+
+    if (s !== 'idle' && d.preview) {
+      statePreview.textContent = `"${d.preview}"`
+      if (d.voice) statePreview.textContent += ` · ${d.voice}`
+    } else {
+      statePreview.textContent = ''
+    }
+
+    // Log
+    const log = d.log || []
+    document.getElementById('logCount').textContent = log.length ? `${log.length} entries` : ''
+
+    const list = document.getElementById('logList')
+    if (!log.length) {
+      list.innerHTML = '<div class="empty-log">No operations yet — send a TTS or STT request to see entries here.</div>'
+      knownIds = new Set()
+      return
+    }
+
+    // Prepend only new entries (avoid full re-render)
+    const newEntries = log.filter(e => !knownIds.has(e.id))
+    newEntries.forEach(e => {
+      knownIds.add(e.id)
+      const node = renderEntry(e)
+      if (list.firstChild && list.firstChild.classList?.contains('empty-log')) {
+        list.innerHTML = ''
+      }
+      list.insertBefore(node, list.firstChild)
+    })
+
+    // Cap at 100 DOM nodes
+    while (list.children.length > 100) list.removeChild(list.lastChild)
+  } catch {}
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+renderHealth()
+poll()
+setInterval(poll, 2000)
+setInterval(renderHealth, 30000)
+</script>
+</body>
+</html>
