@@ -1,0 +1,29 @@
+[Unit]
+Description=VoiceService — STT/TTS voice pipeline (GLaDOS + ATLAS)
+Documentation=https://github.com/sedjwin/VoiceService
+After=network-online.target aigateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sedjwin
+Group=sedjwin
+WorkingDirectory=/home/sedjwin/VoiceService
+
+# Use the venv Python directly so no `source` is needed
+ExecStart=/home/sedjwin/VoiceService/.venv/bin/uvicorn app.main:app \
+    --host 0.0.0.0 \
+    --port 13372 \
+    --log-level info
+
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=voiceservice
+
+# Wait for AIGateway to be ready before first request
+ExecStartPre=/bin/sleep 3
+
+[Install]
+WantedBy=multi-user.target
