@@ -1,4 +1,4 @@
-"""VoiceService configuration — reads from .env or environment variables."""
+"""VoiceService configuration — pure audio service, no LLM knowledge."""
 from pathlib import Path
 from pydantic_settings import BaseSettings
 
@@ -9,23 +9,6 @@ class Settings(BaseSettings):
     # ── Networking ────────────────────────────────────────────────────────────
     host: str = "0.0.0.0"
     port: int = 13372
-
-    # ── AIGateway connection ──────────────────────────────────────────────────
-    aigateway_url: str = "http://localhost:13371"
-    aigateway_api_key: str = ""
-
-    # ── LLM defaults ─────────────────────────────────────────────────────────
-    llm_model: str = ""           # empty → gateway picks / auto-routes
-    llm_max_tokens: int = 200
-    llm_temperature: float = 0.8
-    llm_system_prompt: str = (
-        "You are GLaDOS, the AI from Portal. You are precise, condescending, and darkly humorous. "
-        "Keep responses short — this is a voice conversation. "
-        "You may use action tags to express emotion: "
-        "[HAPPY], [ANGRY], [SAD], [THINKING], [SURPRISED], [NEUTRAL], "
-        "[COLOR:red], [COLOR:blue], [COLOR:green], [NOD], [SHAKE]. "
-        "Place tags at natural emotional moments. Tags will be stripped before speech."
-    )
 
     # ── Model paths ───────────────────────────────────────────────────────────
     glados_onnx: Path = _BASE / "models" / "glados" / "glados.onnx"
@@ -40,7 +23,8 @@ class Settings(BaseSettings):
     default_voice: str = "glados"
 
     # ── ESP32 buffer hint ─────────────────────────────────────────────────────
-    buffer_hint_ms: int = 500     # ms to pre-buffer before playback on ESP32
+    # Bytes to pre-buffer before I2S playback to absorb WiFi jitter (0.5 s @ 22050 Hz 16-bit)
+    buffer_hint_ms: int = 500
 
     class Config:
         env_file = ".env"

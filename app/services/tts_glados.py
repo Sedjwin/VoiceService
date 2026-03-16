@@ -186,13 +186,25 @@ def _ipa_to_ids(ipa: str) -> list[int]:
 # Helper: ONNX inference → float32 audio array
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _infer(ids: list[int], speed: float = 1.0) -> np.ndarray:
+def _infer(
+    ids: list[int],
+    speed: float = 1.0,
+    noise_scale: float = 0.333,
+    noise_w: float = 0.333,
+) -> np.ndarray:
     session = _get_session()
     input_names = {inp.name for inp in session.get_inputs()}
 
     x      = np.array([ids], dtype=np.int64)         # [1, T]
     x_len  = np.array([len(ids)], dtype=np.int64)    # [1]
-    scales = np.array([0.333, 1.0 / max(speed, 0.1), 0.333], dtype=np.float32)
+    # scales = [noise_scale, length_scale, noise_scale_w]
+    # noise_scale  — phoneme variation / expressiveness (higher = more expressive)
+    # length_scale — speaking speed (lower = faster)
+    # noise_w      — duration variation (higher = more natural rhythm)
+    scales = np.array(
+        [noise_scale, 1.0 / max(speed, 0.1), noise_w],
+        dtype=np.float32,
+    )
 
     # Build feed dict flexibly — handle common ONNX export name variants
     feed: dict = {}
@@ -254,7 +266,13 @@ class GladosTTS:
 
     sample_rate: int = SAMPLE_RATE
 
-    def synthesize(self, text: str, speed: float = 1.0) -> dict:
+    def synthesize(
+        self,
+        text: str,
+        speed: float = 1.0,
+        noise_scale: float = 0.333,
+        noise_w: float = 0.333,
+    ) -> dict:
         """
         Returns:
             audio      — WAV bytes (PCM 16-bit 22050 Hz mono)
@@ -273,7 +291,7 @@ class GladosTTS:
         if not ids:
             return {"audio": b"", "visemes": [], "duration_ms": 0}
 
-        audio    = _infer(ids, speed)
+        audio    = _infer(ids, speed, noise_scale, noise_w)
         wav_bytes = _to_wav(audio)
         duration_ms = int(len(audio) / SAMPLE_RATE * 1000)
         visemes  = _ipa_to_visemes(ipa, len(audio))

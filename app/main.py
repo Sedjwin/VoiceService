@@ -1,7 +1,7 @@
 """VoiceService — FastAPI entry point.
 
-Standalone microservice providing STT, TTS (GLaDOS + ATLAS), and a full
-voice-chat pipeline for ESP32-S3 clients and AIGateway integration.
+Pure audio-conversion microservice.  No auth, no LLM knowledge.
+Called internally by AIGateway — not directly by end-user agents.
 """
 import logging
 from contextlib import asynccontextmanager
@@ -22,41 +22,39 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("VoiceService starting on %s:%d", settings.host, settings.port)
-    logger.info("AIGateway endpoint: %s", settings.aigateway_url)
+    logger.info("Pure audio service — called by AIGateway, no auth required.")
 
-    # Warm-up: pre-load models so the first real request isn't slow.
-    # Each loader is wrapped in try/except so a missing model file doesn't
-    # prevent the service from starting.
+    # Warm-up: pre-load heavy models so first request isn't slow.
     import asyncio
     async def _warm(name: str, fn):
         try:
             await asyncio.to_thread(fn)
             logger.info("✓ %s ready", name)
         except Exception as exc:
-            logger.warning("✗ %s not ready — %s  (run download_models.py)", name, exc)
+            logger.warning("✗ %s not ready: %s  (run download_models.py first)", name, exc)
 
     from .services import stt as stt_svc
     from .services.tts_glados import get_glados
     from .services.tts_piper import get_atlas
 
     await _warm("Whisper STT",  stt_svc.get_model)
-    await _warm("GLaDOS TTS",   lambda: get_glados().synthesize("test", 1.0))
-    await _warm("ATLAS TTS",    lambda: get_atlas().synthesize("test", 1.0))
+    await _warm("GLaDOS TTS",   lambda: get_glados().synthesize("test"))
+    await _warm("ATLAS TTS",    lambda: get_atlas().synthesize("test"))
 
     yield
-
     logger.info("VoiceService shutting down.")
 
 
 app = FastAPI(
     title="VoiceService",
     description=(
-        "STT/TTS voice pipeline for ESP32-S3 + AIGateway integration.\n\n"
+        "Internal STT/TTS utility for AIGateway.\n\n"
+        "**Not called directly by agents** — AIGateway orchestrates the full pipeline.\n\n"
         "**Voices:** GLaDOS (Portal ONNX VITS) · ATLAS (Piper en_US-ryan-high)\n\n"
-        "**STT:** faster-whisper (base.en)\n\n"
-        "**Pipeline:** audio → Whisper → AIGateway LLM → TTS → audio + visemes + actions"
+        "**STT:** faster-whisper base.en\n\n"
+        "No authentication required (internal service)."
     ),
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 

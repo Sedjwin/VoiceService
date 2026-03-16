@@ -1,25 +1,27 @@
-"""Voice API router.
+"""Voice API router — pure STT and TTS endpoints.
 
-All endpoints are ESP32-friendly:
-  - POST /stt          raw WAV bytes in body → JSON transcript
-  - POST /tts          JSON request → JSON with base64 audio + visemes
-  - POST /tts/raw      JSON request → raw WAV bytes
-  - POST /voice/chat   multipart (audio file + form fields) → full pipeline JSON
-  - GET  /voices       list voices + loaded status
-  - GET  /health       service health
+VoiceService is an internal utility called BY AIGateway.
+It has no auth, no LLM calls, and no agent awareness.
+AIGateway owns all orchestration and agent authentication.
+
+Endpoints:
+  POST /stt        raw WAV bytes → transcript JSON
+  POST /tts        {text, voice, speed, ...} → base64 WAV + visemes
+  POST /tts/raw    {text, voice, speed}      → raw WAV bytes
+  GET  /voices     list available voices
+  GET  /health     service status
 """
 import asyncio
 import base64
 import logging
-from typing import Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from ..config import settings
 from ..services import stt as stt_svc
-from ..services.pipeline import BUFFER_BYTES, parse_actions, voice_chat
+from ..services.pipeline import buffer_bytes
 from ..services.tts_glados import GladosTTS, get_glados, is_loaded as glados_loaded
 from ..services.tts_piper import AtlasTTS, get_atlas, is_loaded as atlas_loaded
 
@@ -28,17 +30,20 @@ logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Pydantic schemas
+# Schemas
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TTSRequest(BaseModel):
     text: str
     voice: str = Field("glados", description="'glados' or 'atlas'")
-    speed: float = Field(1.0, ge=0.25, le=4.0)
+    speed: float = Field(1.0, ge=0.25, le=4.0, description="Speaking speed multiplier")
+    # VITS expressiveness params (GLaDOS only — ignored for ATLAS)
+    noise_scale: float = Field(0.333, ge=0.0, le=1.0, description="Phoneme variation (expressiveness)")
+    noise_w: float     = Field(0.333, ge=0.0, le=1.0, description="Duration variation")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Internal helper
+# Helper
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _get_engine(voice: str) -> GladosTTS | AtlasTTS:
@@ -51,46 +56,58 @@ def _get_engine(voice: str) -> GladosTTS | AtlasTTS:
 # Endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.post("/stt", summary="Speech → Text (WAV bytes in body)")
+@router.post("/stt", summary="Audio → transcript")
 async def stt_endpoint(request: Request):
     """
-    Send raw WAV bytes (PCM 16-bit 16 kHz mono) in the HTTP body.
+    Send raw WAV bytes (PCM 16-bit 16 kHz mono) in the request body.
+    Returns transcribed text.  No authentication required.
 
     ESP32 example:
-        client.println("POST /stt HTTP/1.1");
-        client.println("Content-Type: audio/wav");
-        client.println("Content-Length: " + String(len));
-        client.write(buf, len);
+        POST /stt
+        Content-Type: audio/wav
+        [raw WAV bytes]
     """
     wav_bytes = await request.body()
     if not wav_bytes:
         raise HTTPException(400, "Empty body — send raw WAV bytes.")
-    result = await asyncio.to_thread(stt_svc.transcribe, wav_bytes)
-    return result
+    return await asyncio.to_thread(stt_svc.transcribe, wav_bytes)
 
 
-@router.post("/tts", summary="Text → Audio (JSON, base64 response)")
+@router.post("/tts", summary="Text → audio (JSON response with base64 WAV)")
 async def tts_json_endpoint(req: TTSRequest):
     """
-    Returns JSON with base64-encoded WAV audio, visemes, and buffer hint.
-    Use `buffer_bytes` to know how much audio to pre-load before playback.
+    Synthesise speech from text.  Returns JSON with base64-encoded WAV,
+    a viseme timeline, and a buffer hint for ESP32 WiFi pre-buffering.
+
+    The `noise_scale` and `noise_w` params let AIGateway pass emotional state
+    through to the VITS synthesiser (GLaDOS voice only):
+      - higher noise_scale → more expressive / varied delivery
+      - lower  noise_scale → flat, robotic delivery
     """
     engine = _get_engine(req.voice)
-    result = await asyncio.to_thread(engine.synthesize, req.text, req.speed)
+
+    # Pass VITS params through to GLaDOS if supported
+    kwargs = {"speed": req.speed}
+    if req.voice.lower() == "glados":
+        kwargs["noise_scale"] = req.noise_scale
+        kwargs["noise_w"]     = req.noise_w
+
+    result = await asyncio.to_thread(engine.synthesize, req.text, **kwargs)
+
     return {
-        "voice":       req.voice,
-        "audio":       base64.b64encode(result["audio"]).decode(),
-        "audio_format":"wav",
-        "sample_rate": engine.sample_rate,
-        "duration_ms": result["duration_ms"],
-        "buffer_bytes": BUFFER_BYTES,
-        "visemes":     result["visemes"],
+        "voice":        req.voice,
+        "audio":        base64.b64encode(result["audio"]).decode(),
+        "audio_format": "wav",
+        "sample_rate":  engine.sample_rate,
+        "duration_ms":  result["duration_ms"],
+        "buffer_bytes": buffer_bytes(engine.sample_rate, settings.buffer_hint_ms),
+        "visemes":      result["visemes"],
     }
 
 
-@router.post("/tts/raw", summary="Text → Audio (raw WAV bytes)")
+@router.post("/tts/raw", summary="Text → audio (raw WAV bytes)")
 async def tts_raw_endpoint(req: TTSRequest):
-    """Returns the WAV file directly — useful for browser/curl testing."""
+    """Returns WAV directly — useful for curl testing or non-ESP32 clients."""
     engine = _get_engine(req.voice)
     result = await asyncio.to_thread(engine.synthesize, req.text, req.speed)
     return Response(
@@ -100,86 +117,6 @@ async def tts_raw_endpoint(req: TTSRequest):
     )
 
 
-@router.post("/voice/chat", summary="Full pipeline: audio → STT → LLM → TTS")
-async def voice_chat_endpoint(
-    audio: UploadFile = File(..., description="WAV audio from ESP32 mic"),
-    voice: str               = Form("glados",   description="'glados' or 'atlas'"),
-    speed: float             = Form(1.0),
-    model: str               = Form("",         description="AIGateway model ID (empty = auto)"),
-    api_key: str             = Form("",         description="AIGateway agent Bearer token"),
-    system_prompt: str       = Form("",         description="Override default LLM system prompt"),
-    max_tokens: int          = Form(0),
-    temperature: float       = Form(0.0),
-):
-    """
-    Complete voice interaction loop:
-    1. Transcribe audio (Whisper STT)
-    2. Send transcript to AIGateway for LLM response
-    3. Parse action tags  ([HAPPY], [ANGRY], [COLOR:red] etc.)
-    4. Synthesise speech (GLaDOS or ATLAS TTS)
-    5. Return JSON with audio, visemes, actions
-
-    Supports ESP32 multipart POST — audio field is a WAV file upload.
-    """
-    wav_bytes = await audio.read()
-    if not wav_bytes:
-        raise HTTPException(400, "No audio data received.")
-
-    config = {
-        "voice":         voice,
-        "speed":         speed,
-        "model":         model,
-        "api_key":       api_key or settings.aigateway_api_key,
-        "system_prompt": system_prompt,
-        "max_tokens":    max_tokens,
-        "temperature":   temperature,
-    }
-    return await voice_chat(wav_bytes, config)
-
-
-@router.post("/voice/tts-chat", summary="Text → LLM → TTS (no STT step)")
-async def text_chat_endpoint(
-    text: str         = Form(...),
-    voice: str        = Form("glados"),
-    speed: float      = Form(1.0),
-    model: str        = Form(""),
-    api_key: str      = Form(""),
-    system_prompt: str= Form(""),
-):
-    """
-    Like /voice/chat but accepts text directly — skips the STT step.
-    Useful for testing LLM + TTS without a microphone.
-    """
-    from ..services.pipeline import _call_llm
-
-    config = {
-        "model":         model,
-        "api_key":       api_key or settings.aigateway_api_key,
-        "system_prompt": system_prompt,
-    }
-    llm_result  = await _call_llm(text, config)
-    response_text = llm_result["content"]
-    clean_text, actions = parse_actions(response_text)
-
-    engine = _get_engine(voice)
-    tts_result = await asyncio.to_thread(engine.synthesize, clean_text, speed)
-
-    return {
-        "input_text":    text,
-        "response_text": response_text,
-        "clean_text":    clean_text,
-        "actions":       actions,
-        "voice":         voice,
-        "model_used":    llm_result["model"],
-        "audio":         base64.b64encode(tts_result["audio"]).decode(),
-        "audio_format":  "wav",
-        "sample_rate":   engine.sample_rate,
-        "duration_ms":   tts_result["duration_ms"],
-        "buffer_bytes":  BUFFER_BYTES,
-        "visemes":       tts_result["visemes"],
-    }
-
-
 @router.get("/voices", summary="List available TTS voices")
 async def list_voices():
     return {
@@ -187,18 +124,20 @@ async def list_voices():
             {
                 "id":          "glados",
                 "name":        "GLaDOS",
-                "character":   "Aperture Science AI  (Portal)",
-                "description": "Precise, condescending, darkly humorous ONNX VITS voice",
+                "character":   "Aperture Science AI (Portal)",
+                "description": "ONNX VITS — precise, condescending, darkly humorous",
                 "sample_rate": 22050,
                 "loaded":      glados_loaded(),
+                "params":      ["speed", "noise_scale", "noise_w"],
             },
             {
                 "id":          "atlas",
                 "name":        "ATLAS",
-                "character":   "Cooperative android  (Portal 2)",
-                "description": "Clear, professional AI-assistant voice (Piper en_US-ryan-high)",
+                "character":   "Cooperative android (Portal 2)",
+                "description": "Piper en_US-ryan-high — clear, professional AI-assistant",
                 "sample_rate": 22050,
                 "loaded":      atlas_loaded(),
+                "params":      ["speed"],
             },
         ],
         "default": settings.default_voice,
@@ -208,11 +147,11 @@ async def list_voices():
 @router.get("/health", summary="Service health")
 async def health():
     return {
-        "status":       "ok",
-        "service":      "VoiceService",
-        "port":         settings.port,
-        "aigateway":    settings.aigateway_url,
-        "stt_loaded":   stt_svc.is_loaded(),
+        "status":        "ok",
+        "service":       "VoiceService",
+        "port":          settings.port,
+        "stt_loaded":    stt_svc.is_loaded(),
         "glados_loaded": glados_loaded(),
-        "atlas_loaded": atlas_loaded(),
+        "atlas_loaded":  atlas_loaded(),
+        "note":          "Internal utility — called by AIGateway, no auth required.",
     }
