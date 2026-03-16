@@ -44,6 +44,38 @@ _IPA_VISEME: dict[str, int] = {
     "w": 23, "j": 23,                   # approximant
 }
 
+def _clean_tts_text(text: str) -> str:
+    """Strip markdown/symbols that espeak reads aloud literally (asterisk, hash, etc.)."""
+    # Bold / italic — extract inner content
+    text = re.sub(r'\*{1,3}([^*\n]*?)\*{1,3}', r'\1', text)
+    text = re.sub(r'_{1,2}([^_\n]*?)_{1,2}', r'\1', text)
+    # Strikethrough
+    text = re.sub(r'~~([^~]*?)~~', r'\1', text)
+    # Headers — strip # markers, keep text
+    text = re.sub(r'(?m)^#{1,6}\s+', '', text)
+    # Fenced code blocks — drop entirely
+    text = re.sub(r'```[\s\S]*?```', '', text)
+    # Inline code — keep content
+    text = re.sub(r'`([^`\n]*?)`', r'\1', text)
+    # Block quotes
+    text = re.sub(r'(?m)^>\s?', '', text)
+    # Markdown links / images → text
+    text = re.sub(r'!?\[([^\]]*?)\]\([^)]*?\)', r'\1', text)
+    # Remaining action tags (already stripped upstream, belt-and-braces)
+    text = re.sub(r'\[[^\]]*?\]', '', text)
+    # Table pipes
+    text = re.sub(r'\|', ' ', text)
+    # Horizontal rules
+    text = re.sub(r'(?m)^[-*_]{3,}\s*$', '', text)
+    # Remaining symbols espeak reads literally
+    text = re.sub(r'[*_\\^~`<>{#]', '', text)
+    # Multiple newlines → spoken pause
+    text = re.sub(r'\n{2,}', '. ', text)
+    text = re.sub(r'\n', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+
 _glados_instance: Optional["GladosTTS"] = None
 
 
@@ -103,8 +135,7 @@ class GladosTTS:
         noise_w: float = 0.333,
     ) -> dict:
         self._load()
-        clean = re.sub(r"\[[A-Z_]+(?::[^\]]+)?\]", "", text).strip()
-        clean = re.sub(r"\s+", " ", clean)
+        clean = _clean_tts_text(text)
         if not clean:
             return {"audio": b"", "visemes": [], "duration_ms": 0}
 

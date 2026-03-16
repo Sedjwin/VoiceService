@@ -9,11 +9,14 @@ Endpoints:
   POST /tts        {text, voice, speed, ...} → base64 WAV + visemes
   POST /tts/raw    {text, voice, speed}      → raw WAV bytes
   GET  /voices     list available voices
+  GET  /activity   current state + recent operation log
   GET  /health     service status
 """
 import asyncio
 import base64
 import logging
+import time
+from collections import deque
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
@@ -27,6 +30,10 @@ from ..services.tts_piper import AtlasTTS, get_atlas, is_loaded as atlas_loaded
 
 router = APIRouter(tags=["Voice"])
 logger = logging.getLogger(__name__)
+
+# ── Activity tracking ────────────────────────────────────────────────────────
+_voice_state: dict = {"current": "idle", "since": None}
+_voice_log: deque = deque(maxlen=200)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -58,51 +65,77 @@ def _get_engine(voice: str) -> GladosTTS | AtlasTTS:
 
 @router.post("/stt", summary="Audio → transcript")
 async def stt_endpoint(request: Request):
-    """
-    Send raw WAV bytes (PCM 16-bit 16 kHz mono) in the request body.
-    Returns transcribed text.  No authentication required.
-
-    ESP32 example:
-        POST /stt
-        Content-Type: audio/wav
-        [raw WAV bytes]
-    """
     wav_bytes = await request.body()
     if not wav_bytes:
         raise HTTPException(400, "Empty body — send raw WAV bytes.")
-    return await asyncio.to_thread(stt_svc.transcribe, wav_bytes)
+    started = time.time()
+    _voice_state.update({"current": "stt", "since": started})
+    error = None
+    result = {}
+    try:
+        result = await asyncio.to_thread(stt_svc.transcribe, wav_bytes)
+        return result
+    except Exception as e:
+        error = str(e)
+        raise
+    finally:
+        fin = time.time()
+        _voice_state.update({"current": "idle", "since": None})
+        _voice_log.appendleft({
+            "id": int(started * 1000),
+            "type": "stt",
+            "started_at": started,
+            "finished_at": fin,
+            "duration_ms": int((fin - started) * 1000),
+            "transcript": result.get("text", "") if isinstance(result, dict) else "",
+            "audio_bytes": len(wav_bytes),
+            "error": error,
+        })
 
 
 @router.post("/tts", summary="Text → audio (JSON response with base64 WAV)")
 async def tts_json_endpoint(req: TTSRequest):
-    """
-    Synthesise speech from text.  Returns JSON with base64-encoded WAV,
-    a viseme timeline, and a buffer hint for ESP32 WiFi pre-buffering.
-
-    The `noise_scale` and `noise_w` params let AIGateway pass emotional state
-    through to the VITS synthesiser (GLaDOS voice only):
-      - higher noise_scale → more expressive / varied delivery
-      - lower  noise_scale → flat, robotic delivery
-    """
     engine = _get_engine(req.voice)
-
-    # Pass VITS params through to GLaDOS if supported
     kwargs = {"speed": req.speed}
     if req.voice.lower() == "glados":
         kwargs["noise_scale"] = req.noise_scale
         kwargs["noise_w"]     = req.noise_w
 
-    result = await asyncio.to_thread(engine.synthesize, req.text, **kwargs)
-
-    return {
-        "voice":        req.voice,
-        "audio":        base64.b64encode(result["audio"]).decode(),
-        "audio_format": "wav",
-        "sample_rate":  engine.sample_rate,
-        "duration_ms":  result["duration_ms"],
-        "buffer_bytes": buffer_bytes(engine.sample_rate, settings.buffer_hint_ms),
-        "visemes":      result["visemes"],
-    }
+    started = time.time()
+    _voice_state.update({"current": "tts", "since": started, "voice": req.voice, "text_preview": req.text[:60]})
+    error = None
+    result = {}
+    try:
+        result = await asyncio.to_thread(engine.synthesize, req.text, **kwargs)
+        payload = {
+            "voice":         req.voice,
+            "audio":         base64.b64encode(result["audio"]).decode(),
+            "audio_format":  "wav",
+            "sample_rate":   engine.sample_rate,
+            "duration_ms":   result["duration_ms"],
+            "synthesis_ms":  int((time.time() - started) * 1000),
+            "buffer_bytes":  buffer_bytes(engine.sample_rate, settings.buffer_hint_ms),
+            "visemes":       result["visemes"],
+        }
+        return payload
+    except Exception as e:
+        error = str(e)
+        raise
+    finally:
+        fin = time.time()
+        _voice_state.update({"current": "idle", "since": None})
+        _voice_log.appendleft({
+            "id": int(started * 1000),
+            "type": "tts",
+            "started_at": started,
+            "finished_at": fin,
+            "duration_ms": int((fin - started) * 1000),
+            "synthesis_ms": int((fin - started) * 1000),
+            "text": req.text[:200],
+            "voice": req.voice,
+            "audio_ms": result.get("duration_ms") if result else None,
+            "error": error,
+        })
 
 
 @router.post("/tts/raw", summary="Text → audio (raw WAV bytes)")
@@ -141,6 +174,17 @@ async def list_voices():
             },
         ],
         "default": settings.default_voice,
+    }
+
+
+@router.get("/activity", summary="Current state + recent operation log")
+async def activity():
+    return {
+        "state":    _voice_state["current"],
+        "since":    _voice_state.get("since"),
+        "preview":  _voice_state.get("text_preview"),
+        "voice":    _voice_state.get("voice"),
+        "log":      list(_voice_log),
     }
 
 

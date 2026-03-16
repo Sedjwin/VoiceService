@@ -32,6 +32,38 @@ _LETTER_VISEME: dict[str, int] = {
 # ─────────────────────────────────────────────────────────────────────────────
 # Singleton
 # ─────────────────────────────────────────────────────────────────────────────
+def _clean_tts_text(text: str) -> str:
+    """Strip markdown/symbols that espeak reads aloud literally (asterisk, hash, etc.)."""
+    # Bold / italic — extract inner content
+    text = re.sub(r'\*{1,3}([^*\n]*?)\*{1,3}', r'\1', text)
+    text = re.sub(r'_{1,2}([^_\n]*?)_{1,2}', r'\1', text)
+    # Strikethrough
+    text = re.sub(r'~~([^~]*?)~~', r'\1', text)
+    # Headers — strip # markers, keep text
+    text = re.sub(r'(?m)^#{1,6}\s+', '', text)
+    # Fenced code blocks — drop entirely
+    text = re.sub(r'```[\s\S]*?```', '', text)
+    # Inline code — keep content
+    text = re.sub(r'`([^`\n]*?)`', r'\1', text)
+    # Block quotes
+    text = re.sub(r'(?m)^>\s?', '', text)
+    # Markdown links / images → text
+    text = re.sub(r'!?\[([^\]]*?)\]\([^)]*?\)', r'\1', text)
+    # Remaining action tags (already stripped upstream, belt-and-braces)
+    text = re.sub(r'\[[^\]]*?\]', '', text)
+    # Table pipes
+    text = re.sub(r'\|', ' ', text)
+    # Horizontal rules
+    text = re.sub(r'(?m)^[-*_]{3,}\s*$', '', text)
+    # Remaining symbols espeak reads literally
+    text = re.sub(r'[*_\\^~`<>{#]', '', text)
+    # Multiple newlines → spoken pause
+    text = re.sub(r'\n{2,}', '. ', text)
+    text = re.sub(r'\n', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
+
 _atlas_instance: Optional["AtlasTTS"] = None
 
 
@@ -106,33 +138,34 @@ class AtlasTTS:
         """
         self._load()
 
-        # Strip action tags before speaking
-        clean = re.sub(r"\[[A-Z_]+(?::[^\]]+)?\]", "", text).strip()
-        clean = re.sub(r"\s+", " ", clean)
+        clean = _clean_tts_text(text)
         if not clean:
             return {"audio": b"", "visemes": [], "duration_ms": 0}
+
+        from piper.config import SynthesisConfig
+        syn_cfg = SynthesisConfig(
+            length_scale=1.0 / max(speed, 0.1),
+            noise_scale=0.667,
+            noise_w_scale=0.8,
+        )
+
+        all_audio: bytearray = bytearray()
+        for chunk in self._voice.synthesize(clean, syn_cfg):
+            all_audio.extend(chunk.audio_int16_bytes)
 
         buf = io.BytesIO()
         with wave.open(buf, "wb") as wav_out:
             wav_out.setnchannels(1)
             wav_out.setsampwidth(2)
             wav_out.setframerate(self.sample_rate)
-            # piper-tts synthesize_stream_raw yields raw int16 PCM chunks
-            for chunk in self._voice.synthesize_stream_raw(
-                clean,
-                length_scale=1.0 / max(speed, 0.1),
-                noise_scale=0.667,
-                noise_w=0.8,
-                sentence_silence=0.0,
-            ):
-                wav_out.writeframes(chunk)
+            wav_out.writeframes(bytes(all_audio))
 
-        wav_bytes = buf.getvalue()
+        wav_bytes   = buf.getvalue()
         duration_ms = _wav_duration_ms(wav_bytes)
-        visemes = _letter_visemes(clean, duration_ms)
+        visemes     = _letter_visemes(clean, duration_ms)
 
         return {
-            "audio": wav_bytes,
-            "visemes": visemes,
+            "audio":      wav_bytes,
+            "visemes":    visemes,
             "duration_ms": duration_ms,
         }
