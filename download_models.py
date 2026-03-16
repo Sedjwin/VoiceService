@@ -57,15 +57,15 @@ def download_glados():
     print("\n── GLaDOS ONNX model ─────────────────────────────────────────────────")
     GLADOS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Try huggingface_hub first (respects HF_TOKEN, retries, etc.)
+    # Public mirror (rokeya71/VITS-Piper-GlaDOS-en-onnx) — original dnhkng/GlaDOS is gated
     try:
         from huggingface_hub import hf_hub_download
-        print("  Fetching from HuggingFace  (dnhkng/GlaDOS) …")
+        import shutil
+        print("  Fetching from HuggingFace (rokeya71/VITS-Piper-GlaDOS-en-onnx) …")
         cached = hf_hub_download(
-            repo_id="dnhkng/GlaDOS",
+            repo_id="rokeya71/VITS-Piper-GlaDOS-en-onnx",
             filename="glados.onnx",
         )
-        import shutil
         shutil.copy(cached, onnx_path)
         print(f"  ✓ glados.onnx  →  {onnx_path}")
         return
@@ -73,7 +73,7 @@ def download_glados():
         print(f"  huggingface_hub failed ({e}), trying direct URL …")
 
     # Fallback: direct HTTPS
-    url = "https://huggingface.co/dnhkng/GlaDOS/resolve/main/glados.onnx"
+    url = "https://huggingface.co/rokeya71/VITS-Piper-GlaDOS-en-onnx/resolve/main/glados.onnx"
     _dl(url, onnx_path)
     print(f"  ✓ glados.onnx  →  {onnx_path}")
 
