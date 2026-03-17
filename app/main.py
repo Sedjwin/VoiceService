@@ -29,24 +29,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("VoiceService starting on %s:%d", settings.host, settings.port)
     logger.info("Pure audio service — called by AIGateway, no auth required.")
-
-    # Warm-up: pre-load heavy models so first request isn't slow.
-    import asyncio
-    async def _warm(name: str, fn):
-        try:
-            await asyncio.to_thread(fn)
-            logger.info("✓ %s ready", name)
-        except Exception as exc:
-            logger.warning("✗ %s not ready: %s  (run download_models.py first)", name, exc)
-
-    from .services import stt as stt_svc
-    from .services.tts_glados import get_glados
-    from .services.tts_piper import get_atlas
-
-    await _warm("Whisper STT",  stt_svc.get_model)
-    await _warm("GLaDOS TTS",   lambda: get_glados().synthesize("test"))
-    await _warm("ATLAS TTS",    lambda: get_atlas().synthesize("test"))
-
+    logger.info("Models load lazily on first request.")
     yield
     logger.info("VoiceService shutting down.")
 
