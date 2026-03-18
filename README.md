@@ -149,6 +149,38 @@ Useful for testing LLM + TTS without a microphone.
 ---
 
 ### `GET /voices` — List voices
+Returns available voices with their loaded status, character info, and supported parameters.
+
+---
+
+### `GET /activity` — Current state and operation log
+```bash
+curl http://localhost:13372/activity
+```
+
+Response:
+```json
+{
+  "state": "idle",
+  "since": "2025-03-17T12:00:00",
+  "preview": null,
+  "voice": "glados",
+  "log": [
+    {
+      "id": 1,
+      "type": "tts",
+      "started_at": "2025-03-17T11:59:30",
+      "finished_at": "2025-03-17T11:59:31",
+      "duration_ms": 340
+    }
+  ]
+}
+```
+
+States: `idle` · `stt` · `tts`
+
+---
+
 ### `GET /health` — Service health
 
 ---
