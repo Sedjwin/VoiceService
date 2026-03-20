@@ -26,7 +26,7 @@ from ..config import settings
 from ..services import stt as stt_svc
 from ..services.pipeline import buffer_bytes
 from ..services.tts_glados import GladosTTS, get_glados, is_loaded as glados_loaded
-from ..services.tts_piper import AtlasTTS, get_atlas, is_loaded as atlas_loaded
+from ..services.tts_piper import PiperTTS, get_atlas, get_jarvis, get_tars, is_loaded as piper_loaded
 
 router = APIRouter(tags=["Voice"])
 logger = logging.getLogger(__name__)
@@ -53,8 +53,13 @@ class TTSRequest(BaseModel):
 # Helper
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _get_engine(voice: str) -> GladosTTS | AtlasTTS:
-    if voice.lower() == "atlas":
+def _get_engine(voice: str) -> GladosTTS | PiperTTS:
+    v = voice.lower()
+    if v == "jarvis":
+        return get_jarvis()
+    if v == "tars":
+        return get_tars()
+    if v == "atlas":
         return get_atlas()
     return get_glados()
 
@@ -179,7 +184,25 @@ async def list_voices():
                 "character":   "Cooperative android (Portal 2)",
                 "description": "Piper en_US-ryan-high — clear, professional AI-assistant",
                 "sample_rate": 22050,
-                "loaded":      atlas_loaded(),
+                "loaded":      piper_loaded("atlas"),
+                "params":      ["speed"],
+            },
+            {
+                "id":          "jarvis",
+                "name":        "JARVIS",
+                "character":   "Iron Man AI butler (MCU)",
+                "description": "Piper en_GB-alan-medium — warm, articulate British male",
+                "sample_rate": 22050,
+                "loaded":      piper_loaded("jarvis"),
+                "params":      ["speed"],
+            },
+            {
+                "id":          "tars",
+                "name":        "TARS",
+                "character":   "Interstellar mission AI",
+                "description": "Piper en_US-hfc_male-medium — direct, efficient, dry wit",
+                "sample_rate": 22050,
+                "loaded":      piper_loaded("tars"),
                 "params":      ["speed"],
             },
         ],
@@ -205,7 +228,9 @@ async def health():
         "service":       "VoiceService",
         "port":          settings.port,
         "stt_loaded":    stt_svc.is_loaded(),
-        "glados_loaded": glados_loaded(),
-        "atlas_loaded":  atlas_loaded(),
+        "glados_loaded":  glados_loaded(),
+        "atlas_loaded":   piper_loaded("atlas"),
+        "jarvis_loaded":  piper_loaded("jarvis"),
+        "tars_loaded":    piper_loaded("tars"),
         "note":          "Internal utility — called by AIGateway, no auth required.",
     }

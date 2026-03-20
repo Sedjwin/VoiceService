@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     # ── Model paths ───────────────────────────────────────────────────────────
     glados_onnx: Path = _BASE / "models" / "glados" / "glados.onnx"
     piper_voice_onnx: Path = _BASE / "models" / "piper" / "en_US-ryan-high.onnx"
+    jarvis_voice_onnx: Path = _BASE / "models" / "piper" / "en_GB-alan-medium.onnx"
+    tars_voice_onnx: Path = _BASE / "models" / "piper" / "en_US-hfc_male-medium.onnx"
 
     # ── STT ───────────────────────────────────────────────────────────────────
     whisper_model: str = "base.en"

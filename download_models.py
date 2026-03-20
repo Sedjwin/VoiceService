@@ -108,13 +108,73 @@ def download_piper():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Piper JARVIS voice  (en_GB-alan-medium)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_JARVIS_BASE = (
+    "https://huggingface.co/rhasspy/piper-voices/resolve/main"
+    "/en/en_GB/alan/medium"
+)
+
+def download_jarvis():
+    """Download en_GB-alan-medium.onnx + .json from rhasspy/piper-voices."""
+    onnx_path = PIPER_DIR / "en_GB-alan-medium.onnx"
+    json_path = PIPER_DIR / "en_GB-alan-medium.onnx.json"
+
+    if onnx_path.exists() and json_path.exists():
+        print(f"Piper JARVIS voice already present at {PIPER_DIR}  (skipping)")
+        return
+
+    print("\n── Piper JARVIS voice (en_GB-alan-medium) ────────────────────────────")
+    PIPER_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not onnx_path.exists():
+        _dl(f"{_JARVIS_BASE}/en_GB-alan-medium.onnx", onnx_path)
+    if not json_path.exists():
+        _dl(f"{_JARVIS_BASE}/en_GB-alan-medium.onnx.json", json_path)
+
+    print(f"  ✓ JARVIS voice  →  {PIPER_DIR}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Piper TARS voice  (en_US-hfc_male-medium)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_TARS_BASE = (
+    "https://huggingface.co/rhasspy/piper-voices/resolve/main"
+    "/en/en_US/hfc_male/medium"
+)
+
+def download_tars():
+    """Download en_US-hfc_male-medium.onnx + .json from rhasspy/piper-voices."""
+    onnx_path = PIPER_DIR / "en_US-hfc_male-medium.onnx"
+    json_path = PIPER_DIR / "en_US-hfc_male-medium.onnx.json"
+
+    if onnx_path.exists() and json_path.exists():
+        print(f"Piper TARS voice already present at {PIPER_DIR}  (skipping)")
+        return
+
+    print("\n── Piper TARS voice (en_US-hfc_male-medium) ─────────────────────────")
+    PIPER_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not onnx_path.exists():
+        _dl(f"{_TARS_BASE}/en_US-hfc_male-medium.onnx", onnx_path)
+    if not json_path.exists():
+        _dl(f"{_TARS_BASE}/en_US-hfc_male-medium.onnx.json", json_path)
+
+    print(f"  ✓ TARS voice  →  {PIPER_DIR}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description="Download VoiceService models")
-    parser.add_argument("--skip-glados", action="store_true")
-    parser.add_argument("--skip-piper",  action="store_true")
+    parser.add_argument("--skip-glados",  action="store_true")
+    parser.add_argument("--skip-piper",   action="store_true")
+    parser.add_argument("--skip-jarvis",  action="store_true")
+    parser.add_argument("--skip-tars",    action="store_true")
     args = parser.parse_args()
 
     print("\n╔══════════════════════════════════╗")
@@ -125,6 +185,10 @@ def main():
         download_glados()
     if not args.skip_piper:
         download_piper()
+    if not args.skip_jarvis:
+        download_jarvis()
+    if not args.skip_tars:
+        download_tars()
 
     print("\n── Whisper STT ───────────────────────────────────────────────────────")
     print("  Whisper base.en (~142 MB) downloads automatically on first STT call.")

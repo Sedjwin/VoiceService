@@ -1,15 +1,18 @@
-"""ATLAS TTS service — Piper TTS with en_US-ryan-high voice.
+"""Generic Piper TTS engine — wraps ONNX VITS piper-tts for any voice model.
 
-ATLAS is the Portal 2 robot companion — clear, professional, AI-assistant tone.
-Uses the piper-tts Python package which wraps the Piper ONNX VITS voice models.
+Currently used for:
+  ATLAS  — en_US-ryan-high (professional male)
+  JARVIS — en_GB-alan-medium (warm British male)
+  TARS   — en_US-hfc_male-medium (direct, precise US male)
 
-Requires: piper-tts (pip), en_US-ryan-high.onnx + .json (download_models.py)
-Sample rate: 22050 Hz
+Requires: piper-tts (pip), matching .onnx + .json model files.
+Sample rate: 22050 Hz (all piper-voices models).
 """
 import io
 import logging
 import re
 import wave
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -29,58 +32,26 @@ _LETTER_VISEME: dict[str, int] = {
     " ": 0,
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Singleton
-# ─────────────────────────────────────────────────────────────────────────────
+
 def _clean_tts_text(text: str) -> str:
-    """Strip markdown/symbols that espeak reads aloud literally (asterisk, hash, etc.)."""
-    # Bold / italic — extract inner content
+    """Strip markdown/symbols that espeak reads aloud literally."""
     text = re.sub(r'\*{1,3}([^*\n]*?)\*{1,3}', r'\1', text)
     text = re.sub(r'_{1,2}([^_\n]*?)_{1,2}', r'\1', text)
-    # Strikethrough
     text = re.sub(r'~~([^~]*?)~~', r'\1', text)
-    # Headers — strip # markers, keep text
     text = re.sub(r'(?m)^#{1,6}\s+', '', text)
-    # Fenced code blocks — drop entirely
     text = re.sub(r'```[\s\S]*?```', '', text)
-    # Inline code — keep content
     text = re.sub(r'`([^`\n]*?)`', r'\1', text)
-    # Block quotes
     text = re.sub(r'(?m)^>\s?', '', text)
-    # Markdown links / images → text
     text = re.sub(r'!?\[([^\]]*?)\]\([^)]*?\)', r'\1', text)
-    # Remaining action tags (already stripped upstream, belt-and-braces)
     text = re.sub(r'\[[^\]]*?\]', '', text)
-    # Table pipes
     text = re.sub(r'\|', ' ', text)
-    # Horizontal rules
     text = re.sub(r'(?m)^[-*_]{3,}\s*$', '', text)
-    # Remaining symbols espeak reads literally
     text = re.sub(r'[*_\\^~`<>{#]', '', text)
-    # Multiple newlines → spoken pause
     text = re.sub(r'\n{2,}', '. ', text)
     text = re.sub(r'\n', ' ', text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
-
-_atlas_instance: Optional["AtlasTTS"] = None
-
-
-def is_loaded() -> bool:
-    return _atlas_instance is not None and _atlas_instance._voice is not None
-
-
-def get_atlas() -> "AtlasTTS":
-    global _atlas_instance
-    if _atlas_instance is None:
-        _atlas_instance = AtlasTTS()
-    return _atlas_instance
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────────────
 
 def _wav_duration_ms(wav_bytes: bytes) -> int:
     with wave.open(io.BytesIO(wav_bytes)) as w:
@@ -99,34 +70,32 @@ def _letter_visemes(text: str, total_ms: int) -> list[dict]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Public class
+# Generic engine
 # ─────────────────────────────────────────────────────────────────────────────
 
-class AtlasTTS:
-    """ATLAS TTS via Piper.  Call .synthesize(text) → {"audio": bytes, ...}"""
+class PiperTTS:
+    """Generic Piper TTS. Instantiate with a model path; call .synthesize(text)."""
 
     sample_rate: int = 22050
 
-    def __init__(self):
-        self._voice = None
+    def __init__(self, model_path: str | Path, voice_id: str = "piper"):
+        self._model_path = str(model_path)
+        self._voice_id   = voice_id
+        self._voice      = None
 
-    def _load(self):
+    def _load(self) -> None:
         if self._voice is not None:
             return
         try:
             from piper.voice import PiperVoice
-            from ..config import settings
-
-            onnx_path = str(settings.piper_voice_onnx)
-            json_path = onnx_path + ".json"
-
-            logger.info("Loading Piper ATLAS model from %s …", onnx_path)
-            self._voice = PiperVoice.load(onnx_path, config_path=json_path, use_cuda=False)
+            json_path = self._model_path + ".json"
+            logger.info("Loading Piper voice '%s' from %s …", self._voice_id, self._model_path)
+            self._voice = PiperVoice.load(self._model_path, config_path=json_path, use_cuda=False)
             self.sample_rate = self._voice.config.sample_rate
-            logger.info("ATLAS TTS ready  (sample_rate=%d).", self.sample_rate)
+            logger.info("Piper '%s' ready (sample_rate=%d).", self._voice_id, self.sample_rate)
         except Exception as e:
-            logger.error("Failed to load Piper ATLAS: %s", e)
-            raise RuntimeError(f"ATLAS TTS unavailable: {e}") from e
+            logger.error("Failed to load Piper voice '%s': %s", self._voice_id, e)
+            raise RuntimeError(f"Piper voice '{self._voice_id}' unavailable: {e}") from e
 
     def synthesize(self, text: str, speed: float = 1.0) -> dict:
         """
@@ -134,7 +103,6 @@ class AtlasTTS:
             audio       — WAV bytes (PCM 16-bit, sample_rate Hz, mono)
             visemes     — list of {viseme_id, offset_ms}
             duration_ms — audio length in ms
-        Blocking — wrap in asyncio.to_thread() from async callers.
         """
         self._load()
 
@@ -165,7 +133,49 @@ class AtlasTTS:
         visemes     = _letter_visemes(clean, duration_ms)
 
         return {
-            "audio":      wav_bytes,
-            "visemes":    visemes,
+            "audio":       wav_bytes,
+            "visemes":     visemes,
             "duration_ms": duration_ms,
         }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-voice singletons
+# ─────────────────────────────────────────────────────────────────────────────
+
+_atlas_instance:  Optional[PiperTTS] = None
+_jarvis_instance: Optional[PiperTTS] = None
+_tars_instance:   Optional[PiperTTS] = None
+
+
+def get_atlas() -> PiperTTS:
+    global _atlas_instance
+    if _atlas_instance is None:
+        from ..config import settings
+        _atlas_instance = PiperTTS(settings.piper_voice_onnx, "atlas")
+    return _atlas_instance
+
+
+def get_jarvis() -> PiperTTS:
+    global _jarvis_instance
+    if _jarvis_instance is None:
+        from ..config import settings
+        _jarvis_instance = PiperTTS(settings.jarvis_voice_onnx, "jarvis")
+    return _jarvis_instance
+
+
+def get_tars() -> PiperTTS:
+    global _tars_instance
+    if _tars_instance is None:
+        from ..config import settings
+        _tars_instance = PiperTTS(settings.tars_voice_onnx, "tars")
+    return _tars_instance
+
+
+def is_loaded(voice_id: str = "atlas") -> bool:
+    inst = {"atlas": _atlas_instance, "jarvis": _jarvis_instance, "tars": _tars_instance}.get(voice_id)
+    return inst is not None and inst._voice is not None
+
+
+# Backward-compat alias
+AtlasTTS = PiperTTS
