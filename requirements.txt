@@ -19,3 +19,6 @@ piper-tts>=1.2.0
 
 # Model download helper
 huggingface-hub>=0.24.0
+
+# TARS XTTSv2 voice cloning (coqui-tts = community fork, Python 3.13 compatible)
+coqui-tts>=0.27.0

@@ -15,6 +15,7 @@ build/
 models/glados/
 models/piper/
 models/whisper/
+models/xtts/
 
 # Logs
 *.log

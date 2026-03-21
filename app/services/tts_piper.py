@@ -3,7 +3,8 @@
 Currently used for:
   ATLAS  — en_US-ryan-high (professional male)
   JARVIS — en_GB-alan-medium (warm British male)
-  TARS   — en_US-hfc_male-medium (direct, precise US male)
+  TARS   — en_US-tars-ai-medium (Interstellar-inspired dedicated model)
+  TERMINATOR — en_US-terminator-hal-medium (robotic fallback profile)
 
 Requires: piper-tts (pip), matching .onnx + .json model files.
 Sample rate: 22050 Hz (all piper-voices models).
@@ -143,9 +144,9 @@ class PiperTTS:
 # Per-voice singletons
 # ─────────────────────────────────────────────────────────────────────────────
 
-_atlas_instance:  Optional[PiperTTS] = None
-_jarvis_instance: Optional[PiperTTS] = None
-_tars_instance:   Optional[PiperTTS] = None
+_atlas_instance:      Optional[PiperTTS] = None
+_jarvis_instance:     Optional[PiperTTS] = None
+_terminator_instance: Optional[PiperTTS] = None
 
 
 def get_atlas() -> PiperTTS:
@@ -164,16 +165,20 @@ def get_jarvis() -> PiperTTS:
     return _jarvis_instance
 
 
-def get_tars() -> PiperTTS:
-    global _tars_instance
-    if _tars_instance is None:
+def get_terminator() -> PiperTTS:
+    global _terminator_instance
+    if _terminator_instance is None:
         from ..config import settings
-        _tars_instance = PiperTTS(settings.tars_voice_onnx, "tars")
-    return _tars_instance
+        _terminator_instance = PiperTTS(settings.terminator_voice_onnx, "terminator")
+    return _terminator_instance
 
 
 def is_loaded(voice_id: str = "atlas") -> bool:
-    inst = {"atlas": _atlas_instance, "jarvis": _jarvis_instance, "tars": _tars_instance}.get(voice_id)
+    inst = {
+        "atlas": _atlas_instance,
+        "jarvis": _jarvis_instance,
+        "terminator": _terminator_instance,
+    }.get(voice_id)
     return inst is not None and inst._voice is not None
 
 

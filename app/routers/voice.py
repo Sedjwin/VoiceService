@@ -26,7 +26,14 @@ from ..config import settings
 from ..services import stt as stt_svc
 from ..services.pipeline import buffer_bytes
 from ..services.tts_glados import GladosTTS, get_glados, is_loaded as glados_loaded
-from ..services.tts_piper import PiperTTS, get_atlas, get_jarvis, get_tars, is_loaded as piper_loaded
+from ..services.tts_piper import (
+    PiperTTS,
+    get_atlas,
+    get_jarvis,
+    get_terminator,
+    is_loaded as piper_loaded,
+)
+from ..services.tts_xtts import XttsTTS, get_tars, is_loaded as xtts_loaded
 
 router = APIRouter(tags=["Voice"])
 logger = logging.getLogger(__name__)
@@ -42,7 +49,7 @@ _voice_log: deque = deque(maxlen=200)
 
 class TTSRequest(BaseModel):
     text: str
-    voice: str = Field("glados", description="'glados' or 'atlas'")
+    voice: str = Field("glados", description="'glados', 'atlas', 'jarvis', 'tars', or 'terminator'")
     speed: float = Field(1.0, ge=0.25, le=4.0, description="Speaking speed multiplier")
     # VITS expressiveness params (GLaDOS only — ignored for ATLAS)
     noise_scale: float = Field(0.333, ge=0.0, le=1.0, description="Phoneme variation (expressiveness)")
@@ -53,12 +60,14 @@ class TTSRequest(BaseModel):
 # Helper
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _get_engine(voice: str) -> GladosTTS | PiperTTS:
+def _get_engine(voice: str) -> GladosTTS | PiperTTS | XttsTTS:
     v = voice.lower()
     if v == "jarvis":
         return get_jarvis()
     if v == "tars":
         return get_tars()
+    if v == "terminator":
+        return get_terminator()
     if v == "atlas":
         return get_atlas()
     return get_glados()
@@ -200,9 +209,18 @@ async def list_voices():
                 "id":          "tars",
                 "name":        "TARS",
                 "character":   "Interstellar mission AI",
-                "description": "Piper en_US-hfc_male-medium — direct, efficient, dry wit",
+                "description": "XTTSv2 (Pyrater/TARS fine-tune) — Bill Irwin voice clone, blunt and dry",
+                "sample_rate": 24000,
+                "loaded":      xtts_loaded(),
+                "params":      ["speed"],
+            },
+            {
+                "id":          "terminator",
+                "name":        "TERMINATOR",
+                "character":   "T-800 inspired robotic profile",
+                "description": "Piper HAL-9000 ONNX profile — cold, mechanical, deliberate",
                 "sample_rate": 22050,
-                "loaded":      piper_loaded("tars"),
+                "loaded":      piper_loaded("terminator"),
                 "params":      ["speed"],
             },
         ],
@@ -231,6 +249,7 @@ async def health():
         "glados_loaded":  glados_loaded(),
         "atlas_loaded":   piper_loaded("atlas"),
         "jarvis_loaded":  piper_loaded("jarvis"),
-        "tars_loaded":    piper_loaded("tars"),
+        "tars_loaded":    xtts_loaded(),
+        "terminator_loaded": piper_loaded("terminator"),
         "note":          "Internal utility — called by AIGateway, no auth required.",
     }

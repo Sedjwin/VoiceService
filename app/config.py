@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     glados_onnx: Path = _BASE / "models" / "glados" / "glados.onnx"
     piper_voice_onnx: Path = _BASE / "models" / "piper" / "en_US-ryan-high.onnx"
     jarvis_voice_onnx: Path = _BASE / "models" / "piper" / "en_GB-alan-medium.onnx"
-    tars_voice_onnx: Path = _BASE / "models" / "piper" / "en_US-hfc_male-medium.onnx"
+    tars_xtts_dir:      Path = _BASE / "models" / "xtts" / "tars"
+    tars_reference_wav: Path = _BASE / "models" / "xtts" / "tars" / "reference.wav"
+    terminator_voice_onnx: Path = _BASE / "models" / "piper" / "en_US-terminator-hal-medium.onnx"
 
     # ── STT ───────────────────────────────────────────────────────────────────
     whisper_model: str = "base.en"

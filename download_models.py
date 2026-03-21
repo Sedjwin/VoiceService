@@ -137,32 +137,60 @@ def download_jarvis():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Piper TARS voice  (en_US-hfc_male-medium)
+# Piper TARS voice  (TARS-AI dedicated model)
 # ─────────────────────────────────────────────────────────────────────────────
 
 _TARS_BASE = (
-    "https://huggingface.co/rhasspy/piper-voices/resolve/main"
-    "/en/en_US/hfc_male/medium"
+    "https://raw.githubusercontent.com/TARS-AI-Community/TARS-AI/V2"
+    "/src/character/TARS/voice"
 )
 
 def download_tars():
-    """Download en_US-hfc_male-medium.onnx + .json from rhasspy/piper-voices."""
-    onnx_path = PIPER_DIR / "en_US-hfc_male-medium.onnx"
-    json_path = PIPER_DIR / "en_US-hfc_male-medium.onnx.json"
+    """Download dedicated TARS ONNX + .json from TARS-AI community repo."""
+    onnx_path = PIPER_DIR / "en_US-tars-ai-medium.onnx"
+    json_path = PIPER_DIR / "en_US-tars-ai-medium.onnx.json"
 
     if onnx_path.exists() and json_path.exists():
         print(f"Piper TARS voice already present at {PIPER_DIR}  (skipping)")
         return
 
-    print("\n── Piper TARS voice (en_US-hfc_male-medium) ─────────────────────────")
+    print("\n── Piper TARS voice (TARS-AI dedicated model) ───────────────────────")
     PIPER_DIR.mkdir(parents=True, exist_ok=True)
 
     if not onnx_path.exists():
-        _dl(f"{_TARS_BASE}/en_US-hfc_male-medium.onnx", onnx_path)
+        _dl(f"{_TARS_BASE}/TARS.onnx", onnx_path)
     if not json_path.exists():
-        _dl(f"{_TARS_BASE}/en_US-hfc_male-medium.onnx.json", json_path)
+        _dl(f"{_TARS_BASE}/TARS.onnx.json", json_path)
 
     print(f"  ✓ TARS voice  →  {PIPER_DIR}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Piper TERMINATOR voice (robotic fallback profile)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_TERMINATOR_BASE = (
+    "https://huggingface.co/campwill/HAL-9000-Piper-TTS/resolve/main"
+)
+
+def download_terminator():
+    """Download a robot-style ONNX profile for Terminator voice slot."""
+    onnx_path = PIPER_DIR / "en_US-terminator-hal-medium.onnx"
+    json_path = PIPER_DIR / "en_US-terminator-hal-medium.onnx.json"
+
+    if onnx_path.exists() and json_path.exists():
+        print(f"Piper TERMINATOR voice already present at {PIPER_DIR}  (skipping)")
+        return
+
+    print("\n── Piper TERMINATOR voice (robotic HAL profile) ─────────────────────")
+    PIPER_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not onnx_path.exists():
+        _dl(f"{_TERMINATOR_BASE}/hal.onnx", onnx_path)
+    if not json_path.exists():
+        _dl(f"{_TERMINATOR_BASE}/hal.onnx.json", json_path)
+
+    print(f"  ✓ TERMINATOR voice  →  {PIPER_DIR}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -175,6 +203,7 @@ def main():
     parser.add_argument("--skip-piper",   action="store_true")
     parser.add_argument("--skip-jarvis",  action="store_true")
     parser.add_argument("--skip-tars",    action="store_true")
+    parser.add_argument("--skip-terminator", action="store_true")
     args = parser.parse_args()
 
     print("\n╔══════════════════════════════════╗")
@@ -189,6 +218,8 @@ def main():
         download_jarvis()
     if not args.skip_tars:
         download_tars()
+    if not args.skip_terminator:
+        download_terminator()
 
     print("\n── Whisper STT ───────────────────────────────────────────────────────")
     print("  Whisper base.en (~142 MB) downloads automatically on first STT call.")

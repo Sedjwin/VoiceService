@@ -9,6 +9,9 @@ Runs on Raspberry Pi 5, optimised for ESP32-S3 clients with I2S microphones and 
 |----|------|--------|-----------|
 | `glados` | **GLaDOS** | dnhkng/GlaDOS ONNX VITS | Aperture Science AI (Portal) — precise, condescending, darkly humorous |
 | `atlas`  | **ATLAS**  | Piper en_US-ryan-high    | Cooperative android (Portal 2) — clear, professional AI-assistant tone |
+| `jarvis` | **JARVIS** | Piper en_GB-alan-medium | Iron Man AI butler style — warm, articulate British male |
+| `tars` | **TARS** | TARS-AI dedicated ONNX | Interstellar mission AI — blunt, efficient, dry wit |
+| `terminator` | **TERMINATOR** | Piper HAL-9000 ONNX profile | T-800-inspired robotic profile — cold and mechanical |
 
 ## Architecture
 
@@ -115,7 +118,7 @@ Multipart form upload:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `audio` | file | — | WAV from ESP32 mic |
-| `voice` | string | `glados` | `glados` or `atlas` |
+| `voice` | string | `glados` | `glados`, `atlas`, `jarvis`, `tars`, or `terminator` |
 | `speed` | float | `1.0` | TTS speed (0.25–4.0) |
 | `model` | string | `` | AIGateway model ID (empty = auto) |
 | `api_key` | string | env | Agent Bearer token |
