@@ -49,7 +49,7 @@ _voice_log: deque = deque(maxlen=200)
 
 class TTSRequest(BaseModel):
     text: str
-    voice: str = Field("glados", description="'glados', 'atlas', 'jarvis', 'tars', or 'terminator'")
+    voice: str = Field("glados", description="'glados', 'atlas', 'jarvis', 'c3po', 'tars', or 'terminator'")
     speed: float = Field(1.0, ge=0.25, le=4.0, description="Speaking speed multiplier")
     # VITS expressiveness params (GLaDOS only — ignored for ATLAS)
     noise_scale: float = Field(0.333, ge=0.0, le=1.0, description="Phoneme variation (expressiveness)")
@@ -62,7 +62,7 @@ class TTSRequest(BaseModel):
 
 def _get_engine(voice: str) -> GladosTTS | PiperTTS | XttsTTS:
     v = voice.lower()
-    if v == "jarvis":
+    if v in ("jarvis", "c3po"):
         return get_jarvis()
     if v == "tars":
         return get_tars()
@@ -201,6 +201,15 @@ async def list_voices():
                 "name":        "JARVIS",
                 "character":   "Iron Man AI butler (MCU)",
                 "description": "Piper en_GB-alan-medium — warm, articulate British male",
+                "sample_rate": 22050,
+                "loaded":      piper_loaded("jarvis"),
+                "params":      ["speed"],
+            },
+            {
+                "id":          "c3po",
+                "name":        "C-3PO",
+                "character":   "Star Wars protocol droid",
+                "description": "Piper en_GB-alan-medium — formal, precise British male",
                 "sample_rate": 22050,
                 "loaded":      piper_loaded("jarvis"),
                 "params":      ["speed"],
