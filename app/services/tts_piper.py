@@ -1,10 +1,12 @@
 """Generic Piper TTS engine — wraps ONNX VITS piper-tts for any voice model.
 
-Currently used for:
-  ATLAS  — en_US-ryan-high (professional male)
-  JARVIS — en_GB-alan-medium (warm British male)
-  TARS   — en_US-tars-ai-medium (Interstellar-inspired dedicated model)
-  TERMINATOR — en_US-terminator-hal-medium (robotic fallback profile)
+Character voices (all trained from source audio, not generic):
+  HAL     — HAL 9000 (2001: A Space Odyssey)
+  K9      — K-9 robot dog (Doctor Who)
+  K9V2    — K-9 alternate training run
+  JARVIS  — J.A.R.V.I.S. (Marvel MCU)
+  WHEATLEY — Wheatley personality core (Portal 2)
+  DATA    — Commander Data (Star Trek: TNG)
 
 Requires: piper-tts (pip), matching .onnx + .json model files.
 Sample rate: 22050 Hz (all piper-voices models).
@@ -144,43 +146,69 @@ class PiperTTS:
 # Per-voice singletons
 # ─────────────────────────────────────────────────────────────────────────────
 
-_atlas_instance:      Optional[PiperTTS] = None
-_jarvis_instance:     Optional[PiperTTS] = None
-_terminator_instance: Optional[PiperTTS] = None
+_hal_instance:      Optional[PiperTTS] = None
+_k9_instance:       Optional[PiperTTS] = None
+_k9v2_instance:     Optional[PiperTTS] = None
+_jarvis_instance:   Optional[PiperTTS] = None
+_wheatley_instance: Optional[PiperTTS] = None
+_data_instance:     Optional[PiperTTS] = None
 
 
-def get_atlas() -> PiperTTS:
-    global _atlas_instance
-    if _atlas_instance is None:
+def get_hal() -> PiperTTS:
+    global _hal_instance
+    if _hal_instance is None:
         from ..config import settings
-        _atlas_instance = PiperTTS(settings.piper_voice_onnx, "atlas")
-    return _atlas_instance
+        _hal_instance = PiperTTS(settings.hal_onnx, "hal")
+    return _hal_instance
+
+
+def get_k9() -> PiperTTS:
+    global _k9_instance
+    if _k9_instance is None:
+        from ..config import settings
+        _k9_instance = PiperTTS(settings.k9_onnx, "k9")
+    return _k9_instance
+
+
+def get_k9v2() -> PiperTTS:
+    global _k9v2_instance
+    if _k9v2_instance is None:
+        from ..config import settings
+        _k9v2_instance = PiperTTS(settings.k9v2_onnx, "k9v2")
+    return _k9v2_instance
 
 
 def get_jarvis() -> PiperTTS:
     global _jarvis_instance
     if _jarvis_instance is None:
         from ..config import settings
-        _jarvis_instance = PiperTTS(settings.jarvis_voice_onnx, "jarvis")
+        _jarvis_instance = PiperTTS(settings.jarvis_onnx, "jarvis")
     return _jarvis_instance
 
 
-def get_terminator() -> PiperTTS:
-    global _terminator_instance
-    if _terminator_instance is None:
+def get_wheatley() -> PiperTTS:
+    global _wheatley_instance
+    if _wheatley_instance is None:
         from ..config import settings
-        _terminator_instance = PiperTTS(settings.terminator_voice_onnx, "terminator")
-    return _terminator_instance
+        _wheatley_instance = PiperTTS(settings.wheatley_onnx, "wheatley")
+    return _wheatley_instance
 
 
-def is_loaded(voice_id: str = "atlas") -> bool:
+def get_data() -> PiperTTS:
+    global _data_instance
+    if _data_instance is None:
+        from ..config import settings
+        _data_instance = PiperTTS(settings.data_onnx, "data")
+    return _data_instance
+
+
+def is_loaded(voice_id: str) -> bool:
     inst = {
-        "atlas": _atlas_instance,
-        "jarvis": _jarvis_instance,
-        "terminator": _terminator_instance,
+        "hal":      _hal_instance,
+        "k9":       _k9_instance,
+        "k9v2":     _k9v2_instance,
+        "jarvis":   _jarvis_instance,
+        "wheatley": _wheatley_instance,
+        "data":     _data_instance,
     }.get(voice_id)
     return inst is not None and inst._voice is not None
-
-
-# Backward-compat alias
-AtlasTTS = PiperTTS

@@ -28,12 +28,9 @@ from ..services.pipeline import buffer_bytes
 from ..services.tts_glados import GladosTTS, get_glados, is_loaded as glados_loaded
 from ..services.tts_piper import (
     PiperTTS,
-    get_atlas,
-    get_jarvis,
-    get_terminator,
+    get_hal, get_k9, get_k9v2, get_jarvis, get_wheatley, get_data,
     is_loaded as piper_loaded,
 )
-from ..services.tts_xtts import XttsTTS, get_tars, is_loaded as xtts_loaded
 
 router = APIRouter(tags=["Voice"])
 logger = logging.getLogger(__name__)
@@ -49,9 +46,9 @@ _voice_log: deque = deque(maxlen=200)
 
 class TTSRequest(BaseModel):
     text: str
-    voice: str = Field("glados", description="'glados', 'atlas', 'jarvis', 'c3po', 'tars', or 'terminator'")
+    voice: str = Field("glados", description="'glados', 'hal', 'k9', 'k9v2', 'jarvis', 'wheatley', or 'data'")
     speed: float = Field(1.0, ge=0.25, le=4.0, description="Speaking speed multiplier")
-    # VITS expressiveness params (GLaDOS only — ignored for ATLAS)
+    # VITS expressiveness params (GLaDOS only — ignored for Piper)
     noise_scale: float = Field(0.333, ge=0.0, le=1.0, description="Phoneme variation (expressiveness)")
     noise_w: float     = Field(0.333, ge=0.0, le=1.0, description="Duration variation")
 
@@ -60,16 +57,14 @@ class TTSRequest(BaseModel):
 # Helper
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _get_engine(voice: str) -> GladosTTS | PiperTTS | XttsTTS:
+def _get_engine(voice: str) -> GladosTTS | PiperTTS:
     v = voice.lower()
-    if v in ("jarvis", "c3po"):
-        return get_jarvis()
-    if v == "tars":
-        return get_tars()
-    if v == "terminator":
-        return get_terminator()
-    if v == "atlas":
-        return get_atlas()
+    if v == "hal":      return get_hal()
+    if v == "k9":       return get_k9()
+    if v == "k9v2":     return get_k9v2()
+    if v == "jarvis":   return get_jarvis()
+    if v == "wheatley": return get_wheatley()
+    if v == "data":     return get_data()
     return get_glados()
 
 
@@ -149,7 +144,7 @@ async def tts_json_endpoint(req: TTSRequest):
             "finished_at": fin,
             "duration_ms": syn_ms,
             "synthesis_ms": syn_ms,
-            "text": req.text,          # full text, not truncated
+            "text": req.text,
             "voice": req.voice,
             "speed": req.speed,
             "noise_scale": req.noise_scale if req.voice.lower() == "glados" else None,
@@ -182,54 +177,63 @@ async def list_voices():
                 "id":          "glados",
                 "name":        "GLaDOS",
                 "character":   "Aperture Science AI (Portal)",
-                "description": "ONNX VITS — precise, condescending, darkly humorous",
+                "description": "Custom ONNX VITS — trained from Portal game audio",
                 "sample_rate": 22050,
                 "loaded":      glados_loaded(),
                 "params":      ["speed", "noise_scale", "noise_w"],
             },
             {
-                "id":          "atlas",
-                "name":        "ATLAS",
-                "character":   "Cooperative android (Portal 2)",
-                "description": "Piper en_US-ryan-high — clear, professional AI-assistant",
+                "id":          "hal",
+                "name":        "HAL 9000",
+                "character":   "Sentient computer (2001: A Space Odyssey)",
+                "description": "Piper — trained from film audio clips",
                 "sample_rate": 22050,
-                "loaded":      piper_loaded("atlas"),
+                "loaded":      piper_loaded("hal"),
+                "params":      ["speed"],
+            },
+            {
+                "id":          "k9",
+                "name":        "K-9",
+                "character":   "Robot dog (Doctor Who)",
+                "description": "Piper — built specifically for Raspberry Pi K-9 replica",
+                "sample_rate": 22050,
+                "loaded":      piper_loaded("k9"),
+                "params":      ["speed"],
+            },
+            {
+                "id":          "k9v2",
+                "name":        "K-9 v2",
+                "character":   "Robot dog (Doctor Who) — alternate training",
+                "description": "Piper — second training run, slightly different timbre",
+                "sample_rate": 22050,
+                "loaded":      piper_loaded("k9v2"),
                 "params":      ["speed"],
             },
             {
                 "id":          "jarvis",
                 "name":        "JARVIS",
-                "character":   "Iron Man AI butler (MCU)",
-                "description": "Piper en_GB-alan-medium — warm, articulate British male",
+                "character":   "Tony Stark's AI (Marvel MCU)",
+                "description": "Piper — trained to emulate Paul Bettany's JARVIS",
                 "sample_rate": 22050,
                 "loaded":      piper_loaded("jarvis"),
                 "params":      ["speed"],
             },
             {
-                "id":          "c3po",
-                "name":        "C-3PO",
-                "character":   "Star Wars protocol droid",
-                "description": "Piper en_GB-alan-medium — formal, precise British male",
+                "id":          "wheatley",
+                "name":        "Wheatley",
+                "character":   "Personality core (Portal 2)",
+                "description": "Piper — trained from original Portal 2 voice files",
                 "sample_rate": 22050,
-                "loaded":      piper_loaded("jarvis"),
+                "loaded":      piper_loaded("wheatley"),
                 "params":      ["speed"],
             },
             {
-                "id":          "tars",
-                "name":        "TARS",
-                "character":   "Interstellar mission AI",
-                "description": "XTTSv2 (Pyrater/TARS fine-tune) — Bill Irwin voice clone, blunt and dry",
-                "sample_rate": 24000,
-                "loaded":      xtts_loaded(),
-                "params":      ["speed"],
-            },
-            {
-                "id":          "terminator",
-                "name":        "TERMINATOR",
-                "character":   "T-800 inspired robotic profile",
-                "description": "Piper HAL-9000 ONNX profile — cold, mechanical, deliberate",
+                "id":          "data",
+                "name":        "Commander Data",
+                "character":   "Android officer (Star Trek: TNG)",
+                "description": "Piper — trained from Star Trek Generations game audio",
                 "sample_rate": 22050,
-                "loaded":      piper_loaded("terminator"),
+                "loaded":      piper_loaded("data"),
                 "params":      ["speed"],
             },
         ],
@@ -251,14 +255,16 @@ async def activity():
 @router.get("/health", summary="Service health")
 async def health():
     return {
-        "status":        "ok",
-        "service":       "VoiceService",
-        "port":          settings.port,
-        "stt_loaded":    stt_svc.is_loaded(),
-        "glados_loaded":  glados_loaded(),
-        "atlas_loaded":   piper_loaded("atlas"),
-        "jarvis_loaded":  piper_loaded("jarvis"),
-        "tars_loaded":    xtts_loaded(),
-        "terminator_loaded": piper_loaded("terminator"),
-        "note":          "Internal utility — called by AIGateway, no auth required.",
+        "status":          "ok",
+        "service":         "VoiceService",
+        "port":            settings.port,
+        "stt_loaded":      stt_svc.is_loaded(),
+        "glados_loaded":   glados_loaded(),
+        "hal_loaded":      piper_loaded("hal"),
+        "k9_loaded":       piper_loaded("k9"),
+        "k9v2_loaded":     piper_loaded("k9v2"),
+        "jarvis_loaded":   piper_loaded("jarvis"),
+        "wheatley_loaded": piper_loaded("wheatley"),
+        "data_loaded":     piper_loaded("data"),
+        "note":            "Internal utility — called by AIGateway, no auth required.",
     }
