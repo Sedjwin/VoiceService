@@ -17,6 +17,9 @@ models/piper/
 models/whisper/
 models/xtts/
 
+# Runtime data (auto-created, contains local voice tuning)
+data/
+
 # Logs
 *.log
 

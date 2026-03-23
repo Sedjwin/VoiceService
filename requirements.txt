@@ -4,6 +4,7 @@ python-dotenv>=1.0.0
 pydantic-settings>=2.0.0
 python-multipart>=0.0.9
 httpx>=0.27.0
+psutil>=5.9.0
 
 # STT
 faster-whisper>=1.0.0

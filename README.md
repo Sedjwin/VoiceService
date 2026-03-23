@@ -1,38 +1,20 @@
 # VoiceService
 
-Standalone STT/TTS microservice for [AIGateway](https://github.com/sedjwin/AIGateway).
-Runs on Raspberry Pi 5, optimised for ESP32-S3 clients with I2S microphones and speakers.
+Standalone STT/TTS microservice. Runs on Raspberry Pi 5. No auth, no LLM calls — pure speech I/O. All orchestration is handled by AIGateway or AgentManager.
 
 ## Voices
 
-| ID | Name | Source | Character |
-|----|------|--------|-----------|
-| `glados` | **GLaDOS** | dnhkng/GlaDOS ONNX VITS | Aperture Science AI (Portal) — precise, condescending, darkly humorous |
-| `atlas`  | **ATLAS**  | Piper en_US-ryan-high    | Cooperative android (Portal 2) — clear, professional AI-assistant tone |
-| `jarvis` | **JARVIS** | Piper en_GB-alan-medium | Iron Man AI butler style — warm, articulate British male |
-| `tars` | **TARS** | TARS-AI dedicated ONNX | Interstellar mission AI — blunt, efficient, dry wit |
-| `terminator` | **TERMINATOR** | Piper HAL-9000 ONNX profile | T-800-inspired robotic profile — cold and mechanical |
+| ID | Name | Character |
+|----|------|-----------|
+| `glados`   | **GLaDOS**          | Aperture Science AI (Portal) — precise, condescending, darkly humorous |
+| `hal`      | **HAL 9000**        | Sentient computer (2001: A Space Odyssey) — calm, eerily polite |
+| `k9`       | **K-9**             | Robot dog (Doctor Who) — clipped, mechanical, loyal |
+| `k9v2`     | **K-9 v2**          | K-9 alternate training — slightly different cadence |
+| `jarvis`   | **JARVIS**          | Tony Stark's AI (Marvel MCU) — warm, articulate British male |
+| `wheatley` | **Wheatley**        | Personality core (Portal 2) — bumbling, excitable, well-meaning |
+| `data`     | **Commander Data**  | Android officer (Star Trek: TNG) — measured, precise, literal |
 
-## Architecture
-
-```
-ESP32-S3 mic (WAV 16 kHz)
-        │
-        ▼
-POST /voice/chat
-        │
-        ├─► Whisper STT  →  transcript
-        │
-        ├─► AIGateway /v1/chat/completions  →  LLM response text
-        │         (brings agent permissions, smart routing, logging)
-        │
-        ├─► Action tag parser  →  [HAPPY], [ANGRY], [COLOR:red] …
-        │
-        └─► GLaDOS / ATLAS TTS  →  WAV audio + viseme timeline
-                │
-                ▼
-        JSON response to ESP32
-```
+Per-voice speed and pitch are tunable via the admin UI at `/admin.html` and persisted to `data/voice_settings.json`. Models can be individually loaded/unloaded to manage RAM.
 
 ## Installation
 
@@ -50,16 +32,7 @@ sudo systemctl start voiceservice   # production (systemd)
 sudo journalctl -u voiceservice -f  # logs
 ```
 
-Runs on port **13372**.
-
-## Configuration
-
-Copy `.env.example` → `.env` and set:
-
-```bash
-AIGATEWAY_API_KEY=<your-agent-bearer-token>  # from AIGateway Agents panel
-AIGATEWAY_URL=http://localhost:13371          # default
-```
+Runs on port **8002** (internal) / **13372** (external, HTTPS via Caddy).
 
 ## API Reference
 
@@ -112,47 +85,39 @@ Same request body as `/tts`, returns `audio/wav` bytes directly.
 
 ---
 
-### `POST /voice/chat` — Full Pipeline
-Multipart form upload:
+### `GET /voices` — List voices
+Returns available voices with their loaded status, character info, and supported parameters.
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `audio` | file | — | WAV from ESP32 mic |
-| `voice` | string | `glados` | `glados`, `atlas`, `jarvis`, `tars`, or `terminator` |
-| `speed` | float | `1.0` | TTS speed (0.25–4.0) |
-| `model` | string | `` | AIGateway model ID (empty = auto) |
-| `api_key` | string | env | Agent Bearer token |
-| `system_prompt` | string | `` | Override LLM system prompt |
+---
 
-Response:
+### `GET /voices/{voice_id}/settings` — Get per-voice tuning
+Returns current speed, pitch, and other tuning parameters for a voice.
+
+### `PUT /voices/{voice_id}/settings` — Update per-voice tuning
+Persists tuning changes to `data/voice_settings.json`.
+
 ```json
-{
-  "input_text":    "user's transcribed speech",
-  "response_text": "full LLM response (may have action tags)",
-  "clean_text":    "spoken text (tags stripped)",
-  "actions":       [{"type": "expression", "value": "happy"}],
-  "voice":         "glados",
-  "model_used":    "qwen2.5:1.5b",
-  "audio":         "<base64 WAV>",
-  "audio_format":  "wav",
-  "sample_rate":   22050,
-  "duration_ms":   1800,
-  "buffer_bytes":  22050,
-  "visemes":       [...],
-  "pipeline_ms":   940
-}
+{ "speed": 1.1, "pitch_shift": 0.0 }
 ```
 
 ---
 
-### `POST /voice/tts-chat` — Text Chat (no STT)
-Like `/voice/chat` but accepts a text `text` field instead of audio.
-Useful for testing LLM + TTS without a microphone.
+### `GET /models` — List models and load status
+Shows which models are currently loaded in memory.
+
+### `POST /models/{voice_id}/load` — Force-load a model
+Loads the model into memory immediately.
+
+### `POST /models/{voice_id}/unload` — Unload a model
+Frees the model from RAM (will reload on next synthesis request).
+
+### `POST /models/{voice_id}/interrupt` — Block next synthesis
+Causes the next TTS request for this voice to return `503`. Used for testing or graceful interruption.
 
 ---
 
-### `GET /voices` — List voices
-Returns available voices with their loaded status, character info, and supported parameters.
+### `GET /stats` — System stats
+Returns CPU usage, RAM usage, and CPU temperature.
 
 ---
 
