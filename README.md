@@ -153,27 +153,36 @@ States: `idle` · `stt` · `tts`
 
 ---
 
-## Action Tags
+## Text Preprocessing (`_clean_tts_text`)
 
-The LLM system prompt instructs the model to include action tags.
-These are stripped before speech synthesis and returned in `actions[]`.
+All text passes through a cleaning stage before being sent to espeak-ng. Applied in order:
 
-| Tag | Type | Value |
-|-----|------|-------|
-| `[HAPPY]` | expression | happy |
-| `[ANGRY]` | expression | angry |
-| `[SAD]` | expression | sad |
-| `[THINKING]` | expression | thinking |
-| `[SURPRISED]` | expression | surprised |
-| `[NEUTRAL]` | expression | neutral |
-| `[NOD]` | gesture | nod |
-| `[SHAKE]` | gesture | shake |
-| `[BLINK]` | gesture | blink |
-| `[COLOR:red]` | color | red |
-| `[COLOR:blue]` | color | blue |
-| `[COLOR:green]` | color | green |
+### Prosody normalisation
+Converts punctuation that espeak-ng ignores into forms it does understand:
 
-ESP32 interprets these to control LEDs, servos, or display expressions.
+| Input | Becomes | Effect |
+|-------|---------|--------|
+| `…` (U+2026) | `...` | Normalise Unicode ellipsis to ASCII so espeak handles it |
+| `...` / `....` | `. ` | Single clean sentence-boundary pause (espeak's behaviour for raw `...` is version-dependent) |
+| `——` / `––` (2+ dashes) | `. ` | Sentence-boundary pause — dramatic beat |
+| `—` / `–` (single dash) | `, ` | Phrase-level pause — mid-sentence beat |
+
+### Markdown stripping
+Removes markup that espeak would read aloud literally:
+
+- Bold/italic (`*text*`, `_text_`) → inner text only
+- Strikethrough (`~~text~~`) → inner text only
+- Headers (`# Title`) → text only
+- Fenced code blocks (` ``` `) → removed entirely
+- Inline code (`` `code` ``) → inner text only
+- Block quotes (`> text`) → text only
+- Markdown links/images → link text only
+- Table pipes `|` → spaces
+- Horizontal rules (`---`) → removed
+- Remaining symbols espeak reads literally: `* _ \ ^ ~ \` < > { #` → removed
+- Multiple newlines → `. ` (paragraph pause)
+- Remaining newlines → space
+- Runs of whitespace → single space
 
 ---
 
