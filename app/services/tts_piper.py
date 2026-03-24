@@ -38,6 +38,12 @@ _LETTER_VISEME: dict[str, int] = {
 
 def _clean_tts_text(text: str) -> str:
     """Strip markdown/symbols that espeak reads aloud literally."""
+    # Prosody: normalise punctuation that espeak-ng ignores but carries dramatic weight.
+    text = text.replace('…', '...')
+    text = re.sub(r'\.{3,}', '. ', text)
+    text = re.sub(r'\s*[—–]{2,}\s*', '. ', text)
+    text = re.sub(r'\s*[—–]\s*', ', ', text)
+
     text = re.sub(r'\*{1,3}([^*\n]*?)\*{1,3}', r'\1', text)
     text = re.sub(r'_{1,2}([^_\n]*?)_{1,2}', r'\1', text)
     text = re.sub(r'~~([^~]*?)~~', r'\1', text)

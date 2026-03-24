@@ -46,6 +46,16 @@ _IPA_VISEME: dict[str, int] = {
 
 def _clean_tts_text(text: str) -> str:
     """Strip markdown/symbols that espeak reads aloud literally (asterisk, hash, etc.)."""
+    # Prosody: normalise punctuation that espeak-ng ignores but carries dramatic weight.
+    # Unicode ellipsis → three ASCII dots (espeak handles ... but not …)
+    text = text.replace('…', '...')
+    # Three-dot ellipsis → sentence-boundary pause (clean single period; espeak
+    # behaviour for raw "..." is version-dependent and often produces no pause)
+    text = re.sub(r'\.{3,}', '. ', text)
+    # Double em/en dash (——) → sentence pause; single — → comma pause
+    text = re.sub(r'\s*[—–]{2,}\s*', '. ', text)
+    text = re.sub(r'\s*[—–]\s*', ', ', text)
+
     # Bold / italic — extract inner content
     text = re.sub(r'\*{1,3}([^*\n]*?)\*{1,3}', r'\1', text)
     text = re.sub(r'_{1,2}([^_\n]*?)_{1,2}', r'\1', text)
