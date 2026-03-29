@@ -13,6 +13,8 @@ class Settings(BaseSettings):
 
     # ── Model paths ───────────────────────────────────────────────────────────
     glados_onnx:    Path = _BASE / "models" / "glados" / "glados.onnx"
+    glados2_onnx:   Path = _BASE / "models" / "glados_dnhkng" / "glados.onnx"
+    glados3_model:  Path = _BASE / "models" / "sbvits2_glados" / "model.safetensors"
     hal_onnx:       Path = _PIPER / "hal.onnx"
     k9_onnx:        Path = _PIPER / "k9_model.onnx"
     k9v2_onnx:      Path = _PIPER / "k9_2449_model.onnx"

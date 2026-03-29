@@ -12,10 +12,7 @@ build/
 .env
 
 # Model weights (large binaries — download via download_models.py)
-models/glados/
-models/piper/
-models/whisper/
-models/xtts/
+models/
 
 # Runtime data (auto-created, contains local voice tuning)
 data/

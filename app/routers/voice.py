@@ -37,6 +37,8 @@ from ..config import settings
 from ..services import stt as stt_svc
 from ..services.pipeline import buffer_bytes
 from ..services.tts_glados import GladosTTS, get_glados, is_loaded as glados_loaded
+from ..services.tts_glados_dnhkng import GladosDnhkngTTS, get_glados_dnhkng, is_loaded as glados2_loaded
+from ..services.tts_glados_sbvits2 import GladosSbVits2TTS, get_glados_sbvits2, is_loaded as glados3_loaded
 from ..services.tts_piper import (
     PiperTTS,
     get_hal, get_k9, get_k9v2, get_jarvis, get_wheatley, get_data,
@@ -56,6 +58,8 @@ _blocked_voices: set[str] = set()   # voices whose next synthesis returns 503
 # ── Voice metadata registry ──────────────────────────────────────────────────
 _VOICE_META = [
     {"id": "glados",   "name": "GLaDOS",         "character": "Aperture Science AI (Portal)"},
+    {"id": "glados2",  "name": "GLaDOS (dnhkng)", "character": "Aperture Science AI — dnhkng neural pipeline"},
+    {"id": "glados3",  "name": "GLaDOS (SBV2)",   "character": "Aperture Science AI — Style-Bert-VITS2 (44100 Hz)"},
     {"id": "hal",      "name": "HAL 9000",        "character": "Sentient computer (2001: A Space Odyssey)"},
     {"id": "k9",       "name": "K-9",             "character": "Robot dog (Doctor Who)"},
     {"id": "k9v2",     "name": "K-9 v2",          "character": "Robot dog — alternate training"},
@@ -69,6 +73,8 @@ _VOICE_IDS = {m["id"] for m in _VOICE_META}
 def _voice_file_path(voice_id: str) -> Path:
     return Path(str({
         "glados":   settings.glados_onnx,
+        "glados2":  settings.glados2_onnx,
+        "glados3":  settings.glados3_model,
         "hal":      settings.hal_onnx,
         "k9":       settings.k9_onnx,
         "k9v2":     settings.k9v2_onnx,
@@ -86,6 +92,8 @@ _SETTINGS_FILE = Path(__file__).parent.parent.parent / "data" / "voice_settings.
 # actual delivery; adjust via the Tune panel if needed.
 _DEFAULT_SETTINGS: dict[str, dict] = {
     "glados":   {"speed": 1.0, "noise_scale": 0.333, "noise_w": 0.333},
+    "glados2":  {"speed": 1.0, "noise_scale": 0.667, "noise_w": 0.8},
+    "glados3":  {"speed": 1.0},
     "hal":      {"speed": 1.0},
     "k9":       {"speed": 1.0},
     "k9v2":     {"speed": 1.0},
@@ -132,6 +140,7 @@ class TTSRequest(BaseModel):
     speed:       Optional[float] = Field(None, ge=0.25, le=4.0,  description="Speed override. Omit to use stored per-voice setting.")
     noise_scale: Optional[float] = Field(None, ge=0.0,  le=1.0,  description="GLaDOS: phoneme variation. Omit to use stored setting.")
     noise_w:     Optional[float] = Field(None, ge=0.0,  le=1.0,  description="GLaDOS: duration variation. Omit to use stored setting.")
+    style:       Optional[str]   = Field(None, description="glados3 (SBV2) only: Neutral/Standard/Deep/Light/Standard_02")
 
 
 class VoiceSettingsUpdate(BaseModel):
@@ -144,7 +153,7 @@ class VoiceSettingsUpdate(BaseModel):
 # Helper
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _get_engine(voice: str) -> GladosTTS | PiperTTS:
+def _get_engine(voice: str) -> GladosTTS | GladosDnhkngTTS | GladosSbVits2TTS | PiperTTS:
     v = voice.lower()
     if v == "hal":      return get_hal()
     if v == "k9":       return get_k9()
@@ -152,6 +161,8 @@ def _get_engine(voice: str) -> GladosTTS | PiperTTS:
     if v == "jarvis":   return get_jarvis()
     if v == "wheatley": return get_wheatley()
     if v == "data":     return get_data()
+    if v == "glados2":  return get_glados_dnhkng()
+    if v == "glados3":  return get_glados_sbvits2()
     return get_glados()
 
 
@@ -160,9 +171,12 @@ def _resolve_tts_kwargs(voice_id: str, req: TTSRequest) -> dict:
     stored = _voice_settings.get(voice_id, {})
     speed  = req.speed if req.speed is not None else stored.get("speed", 1.0)
     kwargs: dict = {"speed": speed}
-    if voice_id == "glados":
-        kwargs["noise_scale"] = req.noise_scale if req.noise_scale is not None else stored.get("noise_scale", 0.333)
-        kwargs["noise_w"]     = req.noise_w     if req.noise_w     is not None else stored.get("noise_w",     0.333)
+    if voice_id in ("glados", "glados2"):
+        defaults = _DEFAULT_SETTINGS.get(voice_id, {})
+        kwargs["noise_scale"] = req.noise_scale if req.noise_scale is not None else stored.get("noise_scale", defaults.get("noise_scale", 0.667))
+        kwargs["noise_w"]     = req.noise_w     if req.noise_w     is not None else stored.get("noise_w",     defaults.get("noise_w",     0.8))
+    if voice_id == "glados3":
+        kwargs["style"] = req.style if req.style else "Neutral"
     return kwargs
 
 
@@ -300,10 +314,11 @@ async def update_voice_settings(voice_id: str, req: VoiceSettingsUpdate):
         raise HTTPException(404, f"Unknown voice: '{voice_id}'")
 
     new: dict = {"speed": req.speed}
-    if voice_id == "glados":
-        cur = _voice_settings.get("glados", {})
-        new["noise_scale"] = req.noise_scale if req.noise_scale is not None else cur.get("noise_scale", 0.333)
-        new["noise_w"]     = req.noise_w     if req.noise_w     is not None else cur.get("noise_w",     0.333)
+    if voice_id in ("glados", "glados2"):
+        defaults = _DEFAULT_SETTINGS.get(voice_id, {})
+        cur = _voice_settings.get(voice_id, {})
+        new["noise_scale"] = req.noise_scale if req.noise_scale is not None else cur.get("noise_scale", defaults.get("noise_scale", 0.667))
+        new["noise_w"]     = req.noise_w     if req.noise_w     is not None else cur.get("noise_w",     defaults.get("noise_w",     0.8))
 
     _voice_settings[voice_id] = new
     _save_voice_settings()
@@ -324,7 +339,14 @@ async def list_models():
         vid = m["id"]
         fp  = _voice_file_path(vid)
         exists = fp.exists()
-        loaded = glados_loaded() if vid == "glados" else piper_loaded(vid)
+        if vid == "glados":
+            loaded = glados_loaded()
+        elif vid == "glados2":
+            loaded = glados2_loaded()
+        elif vid == "glados3":
+            loaded = glados3_loaded()
+        else:
+            loaded = piper_loaded(vid)
         stored = _voice_settings.get(vid, {})
         tts_models.append({
             "id":           vid,
@@ -439,6 +461,25 @@ async def list_voices():
                 "params":      ["speed", "noise_scale", "noise_w"],
             },
             {
+                "id":          "glados3",
+                "name":        "GLaDOS (SBV2)",
+                "character":   "Aperture Science AI (Portal) — Style-Bert-VITS2",
+                "description": "WarriorMama777 — BERT-enhanced VITS2, trained on Portal 1&2 audio, 44100 Hz, 5 styles",
+                "sample_rate": 44100,
+                "loaded":      glados3_loaded(),
+                "params":      ["speed"],
+                "styles":      ["Neutral", "Standard", "Deep", "Light", "Standard_02"],
+            },
+            {
+                "id":          "glados2",
+                "name":        "GLaDOS (dnhkng)",
+                "character":   "Aperture Science AI (Portal) — dnhkng neural pipeline",
+                "description": "dnhkng VITS + neural phonemizer — different training run, more expressive defaults",
+                "sample_rate": 22050,
+                "loaded":      glados2_loaded(),
+                "params":      ["speed", "noise_scale", "noise_w"],
+            },
+            {
                 "id":          "hal",
                 "name":        "HAL 9000",
                 "character":   "Sentient computer (2001: A Space Odyssey)",
@@ -516,6 +557,8 @@ async def health():
         "port":            settings.port,
         "stt_loaded":      stt_svc.is_loaded(),
         "glados_loaded":   glados_loaded(),
+        "glados2_loaded":  glados2_loaded(),
+        "glados3_loaded":  glados3_loaded(),
         "hal_loaded":      piper_loaded("hal"),
         "k9_loaded":       piper_loaded("k9"),
         "k9v2_loaded":     piper_loaded("k9v2"),
